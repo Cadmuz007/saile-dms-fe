@@ -37,6 +37,7 @@ export function SaileAdminTable<TData extends object>({
     enableFullScreenToggle: false,
     enableGlobalFilter: false,
     enableHiding: false,
+    enableMultiSort: false,
     getRowId,
     manualPagination: true,
     manualSorting: true,

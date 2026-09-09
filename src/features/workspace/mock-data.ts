@@ -18,6 +18,7 @@ export const mockDocuments: MockDocument[] = [
     status: "Review",
     recipients: ["Maria Santos", "Victor Tan", "Nina Cruz"],
     viewedBy: ["Maria Santos", "Victor Tan", "Nina Cruz"],
+    metadata: [],
   },
   {
     id: "procurement-proposal-q3",
@@ -36,6 +37,7 @@ export const mockDocuments: MockDocument[] = [
     status: "Pending",
     recipients: ["Luis Mendoza", "Grace Lim"],
     viewedBy: ["Luis Mendoza"],
+    metadata: [],
   },
   {
     id: "budget-requirements-2026",
@@ -54,6 +56,7 @@ export const mockDocuments: MockDocument[] = [
     status: "Setback",
     recipients: ["Maria Santos", "Jamie Flores"],
     viewedBy: ["Maria Santos"],
+    metadata: [],
   },
   {
     id: "annual-disclosure",
@@ -71,6 +74,7 @@ export const mockDocuments: MockDocument[] = [
     barcode: "SDL-2026-000169",
     recipients: [],
     viewedBy: ["Alex Rivera", "Maria Santos", "Nina Cruz"],
+    metadata: [],
   },
   {
     id: "technical-presentation",
@@ -89,6 +93,7 @@ export const mockDocuments: MockDocument[] = [
     status: "Completed",
     recipients: ["Maria Santos", "Victor Tan"],
     viewedBy: ["Maria Santos", "Victor Tan"],
+    metadata: [],
   },
   {
     id: "dms-modernization-charter",
@@ -107,6 +112,7 @@ export const mockDocuments: MockDocument[] = [
     status: "Pending",
     recipients: ["Amelia Reyes", "Grace Lim"],
     viewedBy: ["Amelia Reyes"],
+    metadata: [],
   },
 ];
 

@@ -6,7 +6,7 @@ export type RouteStatus = "Pending" | "Review" | "Completed" | "Setback";
 export interface MockDocument {
   id: string;
   title: string;
-  extension: "PDF" | "DOCX" | "XLSX" | "PPTX" | "PNG";
+  extension: "PDF" | "DOCX" | "XLSX" | "PPTX" | "TXT" | "CSV" | "PNG" | "JPEG";
   section: LibrarySection;
   folder: string;
   subject: string;
@@ -20,6 +20,16 @@ export interface MockDocument {
   status?: RouteStatus;
   recipients: string[];
   viewedBy: string[];
+  mimeType?: string;
+  isLive?: boolean;
+  documentType?: string;
+  metadata: Array<{ label: string; value: string }>;
+  ownerUserId?: string;
+  folderId?: string | null;
+  canMove?: boolean;
+  canArchive?: boolean;
+  canRestore?: boolean;
+  archivedAt?: string | null;
 }
 
 export interface Folder {
@@ -28,6 +38,13 @@ export interface Folder {
   section: LibrarySection;
   documentCount: number;
   updatedAt: string;
+  ownerUserId?: string;
+  isLive?: boolean;
+  parentId?: string | null;
+  canMove?: boolean;
+  canArchive?: boolean;
+  canRestore?: boolean;
+  archivedAt?: string | null;
 }
 
 export interface RouteRecord {

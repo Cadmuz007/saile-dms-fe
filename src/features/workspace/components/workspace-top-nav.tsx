@@ -1,13 +1,16 @@
-import { Archive, Bell, ChevronDown, FolderOpen, HardDrive, Home, Route, Search, Trash2 } from "lucide-react";
+import { Archive, Bell, ChevronDown, FolderOpen, HardDrive, Home, LogOut, Route, Search, Trash2 } from "lucide-react";
 
+import type { AuthenticatedUser } from "@/features/auth/types";
 import { cn } from "@/lib/utils";
 
 import type { WorkspaceView } from "../types";
 
 interface WorkspaceTopNavProps {
   activeView: WorkspaceView;
+  currentUser: AuthenticatedUser;
   onNavigate: (view: WorkspaceView) => void;
   onShowSearch: () => void;
+  onSignOut: () => void;
 }
 
 const navItems = [
@@ -18,7 +21,9 @@ const navItems = [
   { view: "trash", label: "Trash bin", icon: Trash2 },
 ] as const;
 
-export function WorkspaceTopNav({ activeView, onNavigate, onShowSearch }: WorkspaceTopNavProps) {
+export function WorkspaceTopNav({ activeView, currentUser, onNavigate, onShowSearch, onSignOut }: WorkspaceTopNavProps) {
+  const initials = `${currentUser.firstName.charAt(0)}${currentUser.lastName.charAt(0)}`.toUpperCase();
+
   return (
     <header className="flex min-h-[5.25rem] flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 bg-white/85 px-5 py-3 backdrop-blur lg:px-7">
       <nav aria-label="Primary workspace navigation" className="flex flex-wrap gap-1">
@@ -71,11 +76,12 @@ export function WorkspaceTopNav({ activeView, onNavigate, onShowSearch }: Worksp
             <div className="mt-1 h-1 w-20 overflow-hidden rounded-full bg-slate-100"><div className="h-full w-[9%] rounded-full bg-violet-600" /></div>
           </div>
         </div>
-        <button className="flex items-center gap-2 rounded-xl px-1.5 py-1 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" type="button">
-          <span aria-hidden="true" className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-violet-700 to-fuchsia-600 text-[11px] font-bold text-white shadow-sm">AR</span>
-          <span className="hidden text-left lg:block"><span className="block text-xs font-semibold text-slate-800">Alex Rivera</span><span className="block text-[10px] text-slate-500">Records Officer</span></span>
+        <div className="flex items-center gap-1.5 rounded-xl px-1.5 py-1">
+          <span aria-hidden="true" className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-violet-700 to-fuchsia-600 text-[11px] font-bold text-white shadow-sm">{initials}</span>
+          <span className="hidden text-left lg:block"><span className="block text-xs font-semibold text-slate-800">{currentUser.firstName} {currentUser.lastName}</span><span className="block text-[10px] text-slate-500">Authorized user</span></span>
           <ChevronDown aria-hidden="true" className="hidden text-slate-400 lg:block" size={15} />
-        </button>
+          <button aria-label="Sign out" className="grid size-8 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" onClick={onSignOut} title="Sign out" type="button"><LogOut aria-hidden="true" size={16} /></button>
+        </div>
       </div>
     </header>
   );

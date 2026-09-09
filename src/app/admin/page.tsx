@@ -1,5 +1,5 @@
-import { AdminShell } from "@/features/admin/components/admin-shell";
+import { AdminAuthenticationGate } from "@/features/auth/components/admin-authentication-gate";
 
 export default function AdminPage() {
-  return <AdminShell />;
+  return <AdminAuthenticationGate />;
 }

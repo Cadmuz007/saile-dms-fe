@@ -1,88 +1,74 @@
 "use client";
 
-import AddRounded from "@mui/icons-material/AddRounded";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
-import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
-import GroupOutlined from "@mui/icons-material/GroupOutlined";
-import LockOutlined from "@mui/icons-material/LockOutlined";
-import PersonAddAltOutlined from "@mui/icons-material/PersonAddAltOutlined";
-import VpnKeyOutlined from "@mui/icons-material/VpnKeyOutlined";
-import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, MenuItem, Paper, Radio, RadioGroup, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
-import type { MRT_ColumnDef, MRT_PaginationState, MRT_SortingState } from "material-react-table";
-import { useMemo, useState } from "react";
+import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Paper, Skeleton, Stack, Switch, Typography } from "@mui/material";
+import { useEffect, useState } from "react";
+import type { AuthenticatedUser } from "@/features/auth/types";
+import { AuthenticationSettingsRequestError, getAuthenticationSettings, updateAuthenticationSettings } from "@/services/authentication-settings";
+import type { AuthenticationSettings } from "../authentication-settings.types";
+import { PageHeader } from "./admin-page-primitives";
 
-import { adminUsers, groups, licenses, permissions } from "../mock-data";
-import type { AdminUser, GroupRecord, LicenseRecord, PermissionRecord } from "../types";
-import { MetricCard, PageHeader, StatusChip } from "./admin-page-primitives";
-import { SaileAdminTable } from "./saile-admin-table";
+const message = (error: unknown) => error instanceof Error ? error.message : "The request could not be completed.";
 
-function useTableState() {
-  const [pagination, setPagination] = useState<MRT_PaginationState>({ pageIndex: 0, pageSize: 10 });
-  const [sorting, setSorting] = useState<MRT_SortingState>([]);
-  return { pagination, setPagination, setSorting, sorting };
-}
+export function AuthenticationPage({ currentUser, onSignOut }: { currentUser: AuthenticatedUser; onSignOut: () => void }) {
+  const canRead = currentUser.permissions.includes("admin.authentication.read");
+  const canUpdate = currentUser.permissions.includes("admin.authentication.update");
+  const [settings, setSettings] = useState<AuthenticationSettings | null>(null);
+  const [desired, setDesired] = useState(true);
+  const [loading, setLoading] = useState(canRead);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [confirmDisable, setConfirmDisable] = useState(false);
+  const [refresh, setRefresh] = useState(0);
 
-function LicenseAccessDialog({ open, onClose, onVerified }: { open: boolean; onClose: () => void; onVerified: () => void }) {
-  return <Dialog fullWidth maxWidth="xs" onClose={onClose} open={open}><DialogTitle sx={{ fontSize: 18, fontWeight: 750 }}>Verify licensing access</DialogTitle><DialogContent><Stack spacing={2.5} sx={{ pt: 1 }}><Alert icon={<LockOutlined fontSize="inherit" />} severity="info" sx={{ borderRadius: 1, fontSize: 13 }}>A one-time PIN is sent to <strong>licensing@saile.asia</strong> before licenses can be created.</Alert><TextField autoFocus fullWidth helperText="Demo UI only — any six digits will verify access." label="One-time PIN" placeholder="Enter 6-digit PIN" slotProps={{ htmlInput: { inputMode: "numeric", maxLength: 6 } }} /></Stack></DialogContent><DialogActions sx={{ p: 2.5 }}><Button color="inherit" onClick={onClose}>Cancel</Button><Button onClick={onVerified} startIcon={<LockOutlined />} variant="contained">Verify access</Button></DialogActions></Dialog>;
-}
+  useEffect(() => {
+    if (!canRead) return;
+    const controller = new AbortController();
+    getAuthenticationSettings(controller.signal).then((value) => {
+      if (!controller.signal.aborted) { setSettings(value); setDesired(value.isEnabled); }
+    }).catch((error) => {
+      if (!controller.signal.aborted) { setError(message(error)); if (error instanceof AuthenticationSettingsRequestError && error.status === 401) onSignOut(); }
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [canRead, refresh, onSignOut]);
 
-function GenerateLicenseDialog({ open, onClose, onGenerate }: { open: boolean; onClose: () => void; onGenerate: (duration: string) => void }) {
-  const [duration, setDuration] = useState("365");
-  return <Dialog fullWidth maxWidth="sm" onClose={onClose} open={open}><DialogTitle sx={{ fontSize: 18, fontWeight: 750 }}>Generate license</DialogTitle><DialogContent><Stack spacing={2.5} sx={{ pt: 1 }}><Alert severity="info" sx={{ borderRadius: 1, fontSize: 13 }}>The generated license remains available until it is assigned to a new user.</Alert><TextField fullWidth label="License duration (days)" onChange={(event) => setDuration(event.target.value)} type="number" value={duration} /><TextField fullWidth helperText="Optional identifier for internal allocation." label="Allocation note" placeholder="e.g. FY 2026 additional user seat" /></Stack></DialogContent><DialogActions sx={{ p: 2.5 }}><Button color="inherit" onClick={onClose}>Cancel</Button><Button onClick={() => onGenerate(duration)} startIcon={<VpnKeyOutlined />} variant="contained">Generate license</Button></DialogActions></Dialog>;
-}
+  async function persist(isEnabled: boolean) {
+    setSaving(true); setError(""); setNotice("");
+    try {
+      const value = await updateAuthenticationSettings(isEnabled);
+      setSettings(value); setDesired(value.isEnabled); setConfirmDisable(false);
+      setNotice(isEnabled ? "Embedded sign-in enabled." : "Embedded sign-in disabled. Existing sessions remain valid until their normal expiry.");
+    } catch (error) {
+      setError(message(error));
+      if (error instanceof AuthenticationSettingsRequestError && error.status === 401) onSignOut();
+    } finally { setSaving(false); }
+  }
+  async function save() {
+    if (!settings || saving || desired === settings.isEnabled) return;
+    if (!desired) { setConfirmDisable(true); return; }
+    await persist(true);
+  }
 
-export function LicensingPage() {
-  const [items, setItems] = useState<LicenseRecord[]>(licenses);
-  const [filter, setFilter] = useState<"All" | LicenseRecord["status"]>("All");
-  const [verified, setVerified] = useState(false);
-  const [accessDialogOpen, setAccessDialogOpen] = useState(false);
-  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
-  const { pagination, setPagination, setSorting, sorting } = useTableState();
-  const columns = useMemo<MRT_ColumnDef<LicenseRecord>[]>(() => [
-    { accessorKey: "licenseNumber", header: "License number", Cell: ({ cell }) => <Typography sx={{ color: "#810a6a", fontFamily: "monospace", fontSize: 12, fontWeight: 750 }}>{cell.getValue<string>()}</Typography> },
-    { accessorKey: "assignee", header: "Assigned user" }, { accessorKey: "generatedDate", header: "Generated date" }, { accessorKey: "expiryDate", header: "Expiry date" },
-    { accessorKey: "status", header: "Status", Cell: ({ cell }) => <StatusChip label={cell.getValue<LicenseRecord["status"]>()} /> },
-  ], []);
-  const visibleItems = filter === "All" ? items : items.filter((item) => item.status === filter);
-  const availableCount = items.filter((item) => item.status === "Available").length;
-  function generateLicense(duration: string) { const sequence = String(245 + items.length + 1).padStart(6, "0"); setItems((current) => [{ id: `lic-${Date.now()}`, licenseNumber: `SDL-${sequence}`, assignee: "—", generatedDate: "Today", expiryDate: `${duration} days from today`, status: "Available" }, ...current]); setGenerateDialogOpen(false); }
-  function requestGeneration() { if (verified) setGenerateDialogOpen(true); else setAccessDialogOpen(true); }
-  return <Stack spacing={3}><PageHeader action={{ label: "Generate license", icon: <VpnKeyOutlined />, onClick: requestGeneration }} description="Generate, allocate, and monitor the licenses required to create Saile user accounts." title="Licensing" /><Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" } }}><MetricCard color="#810a6a" detail="Licenses currently enabled" icon={<VpnKeyOutlined />} label="Enabled licenses" value={`${items.length}`} /><MetricCard color="#059669" detail="Ready to allocate to a user" icon={<PersonAddAltOutlined />} label="Available licenses" value={`${availableCount}`} /><MetricCard color="#c2410c" detail="Renew before their expiry date" icon={<LockOutlined />} label="Expiring soon" value={`${items.filter((item) => item.status === "Expiring soon").length}`} /></Box><Paper elevation={0} sx={{ borderRadius: 1, p: 2 }}><Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ alignItems: { md: "center" }, justifyContent: "space-between" }}><Alert severity={verified ? "success" : "warning"} sx={{ borderRadius: 1, fontSize: 13 }}>{verified ? "Licensing access verified for this demo session." : "License generation requires a one-time PIN sent to licensing@saile.asia."}</Alert>{!verified ? <Button onClick={() => setAccessDialogOpen(true)} startIcon={<LockOutlined />} variant="outlined">Verify licensing access</Button> : null}</Stack></Paper><Paper elevation={0} sx={{ borderRadius: 1 }}><Tabs aria-label="License status" onChange={(_, value: typeof filter) => setFilter(value)} sx={{ borderBottom: "1px solid #e2e8f0", px: 1 }} value={filter}><Tab label="All licenses" value="All" /><Tab label="Available" value="Available" /><Tab label="Assigned" value="Assigned" /><Tab label="Expiring soon" value="Expiring soon" /></Tabs><Box sx={{ p: 2 }}><SaileAdminTable columns={columns} data={visibleItems} getRowId={(row) => row.id} onPaginationChange={setPagination} onSortingChange={setSorting} pagination={pagination} rowCount={visibleItems.length} sorting={sorting} /></Box></Paper><LicenseAccessDialog onClose={() => setAccessDialogOpen(false)} onVerified={() => { setVerified(true); setAccessDialogOpen(false); setGenerateDialogOpen(true); }} open={accessDialogOpen} /><GenerateLicenseDialog onClose={() => setGenerateDialogOpen(false)} onGenerate={generateLicense} open={generateDialogOpen} /></Stack>;
-}
-
-function CreateUserDialog({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (name: string, email: string, group: string, license: string) => void }) {
-  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", group: groups[0].name, license: licenses.find((license) => license.status === "Available")?.licenseNumber ?? "" });
-  return <Dialog fullWidth maxWidth="sm" onClose={onClose} open={open}><DialogTitle sx={{ fontSize: 18, fontWeight: 750 }}>Create user account</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><Alert severity="info" sx={{ borderRadius: 1, fontSize: 13 }}>A vacant license is required before a user can be created.</Alert><Stack direction={{ xs: "column", sm: "row" }} spacing={2}><TextField fullWidth label="First name" onChange={(event) => setForm({ ...form, firstName: event.target.value })} value={form.firstName} /><TextField fullWidth label="Last name" onChange={(event) => setForm({ ...form, lastName: event.target.value })} value={form.lastName} /></Stack><TextField fullWidth label="Employee ID" placeholder="BTR-0000" /><TextField fullWidth label="Mobile number" placeholder="09XXXXXXXXX" /><TextField fullWidth label="Email" onChange={(event) => setForm({ ...form, email: event.target.value })} type="email" value={form.email} /><TextField fullWidth label="Group" onChange={(event) => setForm({ ...form, group: event.target.value })} select value={form.group}>{groups.map((group) => <MenuItem key={group.id} value={group.name}>{group.name}</MenuItem>)}</TextField><TextField fullWidth label="Vacant license" onChange={(event) => setForm({ ...form, license: event.target.value })} select value={form.license}>{licenses.filter((license) => license.status === "Available").map((license) => <MenuItem key={license.id} value={license.licenseNumber}>{license.licenseNumber}</MenuItem>)}</TextField></Stack></DialogContent><DialogActions sx={{ p: 2.5 }}><Button color="inherit" onClick={onClose}>Cancel</Button><Button onClick={() => onCreate(`${form.firstName} ${form.lastName}`.trim() || "New user", form.email || "new.user@treasury.gov.ph", form.group, form.license)} startIcon={<PersonAddAltOutlined />} variant="contained">Create user</Button></DialogActions></Dialog>;
-}
-
-export function UsersPage() {
-  const [items, setItems] = useState<AdminUser[]>(adminUsers);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const { pagination, setPagination, setSorting, sorting } = useTableState();
-  const columns = useMemo<MRT_ColumnDef<AdminUser>[]>(() => [{ accessorKey: "name", header: "User", Cell: ({ row }) => <Box><Typography sx={{ fontSize: 13, fontWeight: 700 }}>{row.original.name}</Typography><Typography sx={{ color: "text.secondary", fontSize: 11 }}>{row.original.email}</Typography></Box> }, { accessorKey: "employeeId", header: "Employee ID" }, { accessorKey: "group", header: "Group" }, { accessorKey: "license", header: "License" }, { accessorKey: "status", header: "Account status", Cell: ({ cell }) => <StatusChip label={cell.getValue<AdminUser["status"]>()} /> }, { accessorKey: "lastActive", header: "Last active" }], []);
-  function createUser(name: string, email: string, group: string, license: string) { setItems((current) => [{ id: `usr-${Date.now()}`, name, email, employeeId: "BTR-PENDING", group, license, status: "Invited", lastActive: "Invitation pending" }, ...current]); setDialogOpen(false); }
-  return <Stack spacing={3}><PageHeader action={{ label: "Create user", icon: <PersonAddAltOutlined />, onClick: () => setDialogOpen(true) }} description="Create embedded accounts using vacant licenses and assign users to a group." title="Users" /><Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" } }}><MetricCard color="#810a6a" detail="Enabled user accounts" icon={<PersonAddAltOutlined />} label="Active users" value={`${items.filter((user) => user.status === "Active").length}`} /><MetricCard color="#2563eb" detail="Pending their first sign-in" icon={<ContentCopyOutlined />} label="Invited users" value={`${items.filter((user) => user.status === "Invited").length}`} /><MetricCard color="#059669" detail="License availability is managed in Licensing" icon={<VpnKeyOutlined />} label="Vacant licenses" value={`${licenses.filter((license) => license.status === "Available").length}`} /></Box><Paper elevation={0} sx={{ borderRadius: 1, p: 2 }}><TextField fullWidth label="Search users" placeholder="Search by name, email, employee ID, or group" size="small" sx={{ maxWidth: { md: 540 } }} /><Typography sx={{ color: "text.secondary", fontSize: 11.5, mt: 1 }}>Search will call the users endpoint when the backend is connected.</Typography></Paper><SaileAdminTable columns={columns} data={items} getRowId={(row) => row.id} onPaginationChange={setPagination} onSortingChange={setSorting} pagination={pagination} rowCount={items.length} sorting={sorting} /><CreateUserDialog onClose={() => setDialogOpen(false)} onCreate={createUser} open={dialogOpen} /></Stack>;
-}
-
-function CreateGroupDialog({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (name: string) => void }) {
-  const [name, setName] = useState("");
-  return <Dialog fullWidth maxWidth="sm" onClose={onClose} open={open}><DialogTitle sx={{ fontSize: 18, fontWeight: 750 }}>Create group</DialogTitle><DialogContent><Stack spacing={2} sx={{ pt: 1 }}><TextField fullWidth label="Group name" onChange={(event) => setName(event.target.value)} placeholder="e.g. Finance Reviewers" value={name} /><TextField fullWidth label="Description" minRows={2} multiline placeholder="Describe this group’s responsibility." /><Divider><Typography sx={{ color: "text.secondary", fontSize: 11 }}>INITIAL PERMISSIONS</Typography></Divider>{permissions.slice(0, 4).map((permission) => <FormControlLabel control={<Checkbox defaultChecked={permission.id === "perm-02"} />} key={permission.id} label={permission.name} />)}</Stack></DialogContent><DialogActions sx={{ p: 2.5 }}><Button color="inherit" onClick={onClose}>Cancel</Button><Button onClick={() => onCreate(name || "New group")} startIcon={<GroupOutlined />} variant="contained">Create group</Button></DialogActions></Dialog>;
-}
-
-export function GroupsPage() {
-  const [items, setItems] = useState<GroupRecord[]>(groups);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const { pagination, setPagination, setSorting, sorting } = useTableState();
-  const columns = useMemo<MRT_ColumnDef<GroupRecord>[]>(() => [{ accessorKey: "name", header: "Group", Cell: ({ row }) => <Box><Typography sx={{ fontSize: 13, fontWeight: 700 }}>{row.original.name}</Typography><Typography sx={{ color: "text.secondary", fontSize: 11 }}>{row.original.description}</Typography></Box> }, { accessorKey: "memberCount", header: "Members" }, { accessorKey: "permissionCount", header: "Permissions" }, { accessorKey: "updatedAt", header: "Last updated" }], []);
-  return <Stack spacing={3}><PageHeader action={{ label: "Create group", icon: <GroupOutlined />, onClick: () => setDialogOpen(true) }} description="Allocate users to groups and apply the permissions each group may use." title="Groups" /><Paper elevation={0} sx={{ borderRadius: 1, p: 2 }}><Alert severity="info" sx={{ borderRadius: 1, fontSize: 13 }}>Group permissions are enforced by the backend when document actions are connected.</Alert></Paper><SaileAdminTable columns={columns} data={items} getRowId={(row) => row.id} onPaginationChange={setPagination} onSortingChange={setSorting} pagination={pagination} rowCount={items.length} sorting={sorting} /><CreateGroupDialog onClose={() => setDialogOpen(false)} onCreate={(name) => { setItems((current) => [{ id: `grp-${Date.now()}`, name, memberCount: 0, permissionCount: 1, description: "Newly configured group.", updatedAt: "Just now" }, ...current]); setDialogOpen(false); }} open={dialogOpen} /></Stack>;
-}
-
-export function PermissionsPage() {
-  const [items, setItems] = useState<PermissionRecord[]>(permissions);
-  return <Stack spacing={3}><PageHeader action={{ label: "Create permission", icon: <AddRounded /> }} description="Configure the document actions that may be granted to a group." title="Permissions" /><Alert severity="info" sx={{ borderRadius: 1, fontSize: 13 }}>The required Saile permissions are shown below. Toggle visibility is UI-only until authorization rules are implemented on the backend.</Alert><Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" } }}>{items.map((permission) => <Paper elevation={0} key={permission.id} sx={{ borderRadius: 1, p: 2 }}><Stack direction="row" spacing={1.5} sx={{ alignItems: "flex-start", justifyContent: "space-between" }}><Box><Typography sx={{ fontSize: 14, fontWeight: 700 }}>{permission.name}</Typography><Typography sx={{ color: "text.secondary", fontSize: 12, mt: .4 }}>{permission.description}</Typography><Typography sx={{ color: "#810a6a", fontSize: 11.5, fontWeight: 700, mt: 1 }}>{permission.assignedGroups} groups assigned</Typography></Box><Checkbox checked={permission.status === "Active"} onChange={() => setItems((current) => current.map((item) => item.id === permission.id ? { ...item, status: item.status === "Active" ? "Draft" : "Active" } : item))} /></Stack></Paper>)}</Box></Stack>;
-}
-
-export function AuthenticationPage() {
-  const [method, setMethod] = useState("embedded");
-  return <Stack spacing={3}><PageHeader action={{ label: "Save authentication settings", icon: <AdminPanelSettingsOutlined /> }} description="Select whether Saile authenticates embedded users or synchronizes an approved directory." title="Authentication" /><Alert severity="warning" sx={{ borderRadius: 1, fontSize: 13 }}>AD/LDAP synchronization is a UI configuration only. Directory credentials and synchronization are not implemented.</Alert><Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" } }}><Paper elevation={0} sx={{ border: `2px solid ${method === "embedded" ? "#810a6a" : "#e2e8f0"}`, borderRadius: 1, p: 2.5 }}><RadioGroup onChange={(event) => setMethod(event.target.value)} value={method}><FormControlLabel control={<Radio />} label={<Box><Typography sx={{ fontWeight: 700 }}>Embedded users</Typography><Typography sx={{ color: "text.secondary", fontSize: 12, mt: .25 }}>Authenticate users created in the Users module.</Typography></Box>} value="embedded" /></RadioGroup></Paper><Paper elevation={0} sx={{ border: `2px solid ${method === "directory" ? "#810a6a" : "#e2e8f0"}`, borderRadius: 1, p: 2.5 }}><RadioGroup onChange={(event) => setMethod(event.target.value)} value={method}><FormControlLabel control={<Radio />} label={<Box><Typography sx={{ fontWeight: 700 }}>Sync via Active Directory or LDAP</Typography><Typography sx={{ color: "text.secondary", fontSize: 12, mt: .25 }}>Fetch directory accounts up to the enabled license capacity.</Typography></Box>} value="directory" /></RadioGroup></Paper></Box><Paper elevation={0} sx={{ borderRadius: 1, p: 2.5 }}><Typography sx={{ fontSize: 15, fontWeight: 700 }}>Directory synchronization capacity</Typography><Typography sx={{ color: "text.secondary", fontSize: 12, mt: .5 }}>The directory may synchronize up to the number of enabled licenses.</Typography><Box sx={{ bgcolor: "#f1f5f9", height: 8, mt: 2, width: "100%" }}><Box sx={{ bgcolor: "#810a6a", height: 8, width: "78%" }} /></Box><Typography sx={{ color: "text.secondary", fontSize: 12, mt: .75 }}>188 of 240 enabled licenses are allocated.</Typography></Paper></Stack>;
+  return <Stack spacing={3}>
+    <PageHeader title="Authentication" description="Manage embedded sign-in for the Bureau of the Treasury deployment."
+      action={canUpdate && settings ? { label: saving ? "Saving…" : "Save authentication settings", icon: <AdminPanelSettingsOutlined />, onClick: save, disabled: saving || desired === settings.isEnabled } : undefined} />
+    {notice && <Alert severity="success" onClose={() => setNotice("")}>{notice}</Alert>}
+    {error && <Alert severity="error" action={canRead ? <Button onClick={() => { setLoading(true); setError(""); setRefresh((value) => value + 1); }}>Retry</Button> : undefined}>{error}</Alert>}
+    {!canRead ? <Alert severity="info">You do not have permission to view authentication settings.</Alert> : loading ? <Skeleton variant="rounded" height={180} /> : settings && <>
+      <Paper elevation={0} sx={{ border: "2px solid #810a6a", borderRadius: 1, p: 2.5 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ alignItems: { sm: "center" }, justifyContent: "space-between" }}>
+          <Box><Stack direction="row" spacing={1} sx={{ alignItems: "center" }}><Typography sx={{ fontSize: 16, fontWeight: 750 }}>Embedded email and password</Typography><Chip size="small" color={settings.isEnabled ? "success" : "default"} label={settings.isEnabled ? "Enabled" : "Disabled"} /></Stack>
+            <Typography color="text.secondary" sx={{ fontSize: 13, mt: .75 }}>Accounts created in Users can sign in when embedded authentication is enabled and all account and license checks pass.</Typography></Box>
+          <Switch slotProps={{ input: { "aria-label": "Enable embedded sign-in" } }} checked={desired} disabled={!canUpdate || saving} onChange={(event) => setDesired(event.target.checked)} />
+        </Stack>
+        <Typography color="text.secondary" sx={{ fontSize: 12, mt: 2 }}>Last updated {new Date(settings.updatedAt).toLocaleString()}{settings.updatedByUser ? ` by ${settings.updatedByUser.firstName} ${settings.updatedByUser.lastName}` : ""}.</Typography>
+      </Paper>
+      <Paper elevation={0} sx={{ borderRadius: 1, p: 2.5 }}><Typography sx={{ fontSize: 16, fontWeight: 750 }}>Active Directory / LDAP</Typography><Typography color="text.secondary" sx={{ fontSize: 13, mt: .75 }}>Connection settings, credential storage, directory testing, and synchronization rules are pending approval and are not available in this milestone.</Typography><Chip label="Deferred" size="small" sx={{ mt: 2 }} /></Paper>
+    </>}
+    <Dialog open={confirmDisable} onClose={() => { if (!saving) setConfirmDisable(false); }} aria-labelledby="disable-embedded-title">
+      <DialogTitle id="disable-embedded-title">Disable embedded sign-in?</DialogTitle><DialogContent><Alert severity="warning">New email/password sign-ins will be blocked for this deployment. Existing authenticated sessions remain valid until their access token expires, so an authorized administrator can re-enable sign-in during that window.</Alert></DialogContent>
+      <DialogActions><Button disabled={saving} onClick={() => setConfirmDisable(false)}>Cancel</Button><Button color="warning" variant="contained" disabled={saving} onClick={() => persist(false)}>{saving ? "Disabling…" : "Disable sign-in"}</Button></DialogActions>
+    </Dialog>
+  </Stack>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, Sparkles } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +9,10 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 
+import type { SignInCredentials } from "../types";
+
 const signInSchema = z.object({
+  organizationCode: z.string().trim().min(1, "Enter your organization code."),
   email: z.string().trim().email("Enter a valid email address."),
   password: z.string().min(1, "Enter your password."),
   remember: z.boolean(),
@@ -18,7 +21,7 @@ const signInSchema = z.object({
 type SignInValues = z.infer<typeof signInSchema>;
 
 interface LoginScreenProps {
-  onSignIn: () => void;
+  onSignIn: (credentials: SignInCredentials, rememberDevice: boolean) => Promise<void>;
 }
 
 const productBenefits = [
@@ -29,13 +32,23 @@ const productBenefits = [
 
 export function LoginScreen({ onSignIn }: LoginScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<SignInValues>({
     resolver: zodResolver(signInSchema),
-    defaultValues: { email: "", password: "", remember: false },
+    defaultValues: { organizationCode: "BTR", email: "", password: "", remember: false },
   });
 
-  function submit(): void {
-    onSignIn();
+  async function submit(values: SignInValues): Promise<void> {
+    setSignInError(null);
+    try {
+      await onSignIn({
+        organizationCode: values.organizationCode,
+        email: values.email,
+        password: values.password,
+      }, values.remember);
+    } catch (error) {
+      setSignInError(error instanceof Error ? error.message : "Unable to sign in. Please try again.");
+    }
   }
 
   return (
@@ -65,10 +78,12 @@ export function LoginScreen({ onSignIn }: LoginScreenProps) {
           <div className="mt-10"><p className="text-xs font-bold tracking-[0.13em] text-violet-700 uppercase">Welcome back</p><h2 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-slate-950">Sign in to Saile</h2><p className="mt-3 text-sm leading-6 text-slate-500">Use your authorized account to access your document workspace.</p></div>
 
           <form className="mt-9 grid gap-5" onSubmit={handleSubmit(submit)}>
+            <div className="grid gap-2"><label className="text-sm font-semibold text-slate-800" htmlFor="organizationCode">Organization code</label><input aria-invalid={Boolean(errors.organizationCode)} autoCapitalize="characters" autoComplete="organization" className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium tracking-[0.08em] text-slate-900 uppercase outline-none transition placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100 aria-invalid:border-rose-400" id="organizationCode" placeholder="BTR" {...register("organizationCode")} />{errors.organizationCode ? <p className="text-xs font-medium text-rose-600" role="alert">{errors.organizationCode.message}</p> : null}</div>
             <div className="grid gap-2"><label className="text-sm font-semibold text-slate-800" htmlFor="email">Email address</label><div className="relative"><Mail aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-slate-400" size={17} /><input aria-invalid={Boolean(errors.email)} autoComplete="email" className="h-11 w-full rounded-lg border border-slate-200 bg-white py-2 pr-3 pl-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100 aria-invalid:border-rose-400" id="email" placeholder="name@treasury.gov.ph" type="email" {...register("email")} /></div>{errors.email ? <p className="text-xs font-medium text-rose-600" role="alert">{errors.email.message}</p> : null}</div>
             <div className="grid gap-2"><div className="flex items-center justify-between gap-4"><label className="text-sm font-semibold text-slate-800" htmlFor="password">Password</label><button className="text-xs font-semibold text-violet-700 transition hover:text-violet-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" type="button">Forgot password?</button></div><div className="relative"><LockKeyhole aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-slate-400" size={17} /><input aria-invalid={Boolean(errors.password)} autoComplete="current-password" className="h-11 w-full rounded-lg border border-slate-200 bg-white py-2 pr-11 pl-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100 aria-invalid:border-rose-400" id="password" placeholder="Enter your password" type={showPassword ? "text" : "password"} {...register("password")} /><button aria-label={showPassword ? "Hide password" : "Show password"} className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-sm text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" onClick={() => setShowPassword((current) => !current)} type="button">{showPassword ? <EyeOff aria-hidden="true" size={17} /> : <Eye aria-hidden="true" size={17} />}</button></div>{errors.password ? <p className="text-xs font-medium text-rose-600" role="alert">{errors.password.message}</p> : null}</div>
             <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-600"><input className="size-4 rounded-sm border-slate-300 accent-violet-700" type="checkbox" {...register("remember")} />Remember this device</label>
             <Button className="mt-1 h-11 rounded-lg text-sm shadow-sm" disabled={isSubmitting} type="submit" variant="default">Sign in</Button>
+            {signInError ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700" role="alert">{signInError}</p> : null}
           </form>
 
           <div className="mt-9 flex items-start gap-3 border-t border-slate-200 pt-5 text-xs leading-5 text-slate-500"><ShieldCheck aria-hidden="true" className="mt-0.5 shrink-0 text-violet-700" size={16} /><p>Access is restricted to authorized Bureau of the Treasury personnel.</p></div>

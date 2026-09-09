@@ -18,6 +18,9 @@ const fallbackClasses: Record<MockDocument["extension"], string> = {
   XLSX: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   PPTX: "bg-amber-50 text-amber-700 ring-amber-100",
   PNG: "bg-violet-50 text-violet-700 ring-violet-100",
+  TXT: "bg-slate-50 text-slate-700 ring-slate-100",
+  CSV: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  JPEG: "bg-violet-50 text-violet-700 ring-violet-100",
 };
 
 type IconSize = "small" | "medium" | "large" | "hero";

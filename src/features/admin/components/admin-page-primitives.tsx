@@ -22,8 +22,8 @@ export function StatusChip({ label }: { label: AdminStatus }) {
   return <Chip label={label} size="small" sx={{ ...statusColor[label], borderRadius: .75, fontSize: 11, fontWeight: 700, height: 24 }} />;
 }
 
-export function PageHeader({ title, description, action }: { title: string; description: string; action?: { label: string; icon?: ReactNode; onClick?: () => void } }) {
-  return <Stack direction={{ xs: "column", sm: "row" }} spacing={2.5} sx={{ alignItems: { sm: "flex-start" }, justifyContent: "space-between" }}><Box><Typography component="h1" sx={{ fontSize: { xs: 25, md: 29 }, fontWeight: 800, letterSpacing: "-.035em" }}>{title}</Typography><Typography sx={{ color: "text.secondary", fontSize: 14, mt: .5 }}>{description}</Typography></Box>{action ? <Button disableElevation onClick={action.onClick} startIcon={action.icon ?? <AddRounded />} sx={{ px: 2, py: 1, whiteSpace: "nowrap" }} variant="contained">{action.label}</Button> : null}</Stack>;
+export function PageHeader({ title, description, action }: { title: string; description: string; action?: { label: string; icon?: ReactNode; onClick?: () => void; disabled?: boolean } }) {
+  return <Stack direction={{ xs: "column", sm: "row" }} spacing={2.5} sx={{ alignItems: { sm: "flex-start" }, justifyContent: "space-between" }}><Box><Typography component="h1" sx={{ fontSize: { xs: 25, md: 29 }, fontWeight: 800, letterSpacing: "-.035em" }}>{title}</Typography><Typography sx={{ color: "text.secondary", fontSize: 14, mt: .5 }}>{description}</Typography></Box>{action ? <Button disableElevation disabled={action.disabled} onClick={action.onClick} startIcon={action.icon ?? <AddRounded />} sx={{ px: 2, py: 1, whiteSpace: "nowrap" }} variant="contained">{action.label}</Button> : null}</Stack>;
 }
 
 export function MetricCard({ icon, label, value, detail, color = "#810a6a" }: { icon: ReactNode; label: string; value: string; detail: string; color?: string }) {
