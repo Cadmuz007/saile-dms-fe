@@ -29,6 +29,7 @@ export interface MockDocument {
   canMove?: boolean;
   canArchive?: boolean;
   canRestore?: boolean;
+  canStartWorkflow?: boolean;
   archivedAt?: string | null;
 }
 
@@ -45,16 +46,4 @@ export interface Folder {
   canArchive?: boolean;
   canRestore?: boolean;
   archivedAt?: string | null;
-}
-
-export interface RouteRecord {
-  id: string;
-  documentId: string;
-  routeType: "Inbound" | "Outbound";
-  from: string;
-  to: string;
-  sentAt: string;
-  responseTime: string;
-  status: RouteStatus;
-  remarks: string;
 }

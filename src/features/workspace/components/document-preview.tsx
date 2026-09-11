@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Barcode, Check, Eye, Printer, Sailboat, Send, X } from "lucide-react";
+import { Barcode, Eye, Printer, Sailboat, Send } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { fetchDocumentPreview } from "@/services/documents";
 
 import type { MockDocument, RouteStatus } from "../types";
@@ -13,7 +12,7 @@ import type { MockDocument, RouteStatus } from "../types";
 interface DocumentPreviewProps {
   document: MockDocument;
   onAction: (action: string) => void;
-  onDecision: (documentId: string, status: RouteStatus) => void;
+  onSetSail?: () => void;
 }
 
 const statusTone: Record<RouteStatus, "amber" | "blue" | "green" | "red"> = {
@@ -30,8 +29,7 @@ const actionItems = [
   { label: "Barcode", icon: Barcode },
 ];
 
-export function DocumentPreview({ document, onAction, onDecision }: DocumentPreviewProps) {
-  const needsReview = document.status === "Review" || document.status === "Pending";
+export function DocumentPreview({ document, onAction, onSetSail }: DocumentPreviewProps) {
   const canPreview = document.mimeType === "application/pdf" || document.mimeType?.startsWith("image/") === true;
   const [preview, setPreview] = useState<{ documentId: string; url?: string; error?: string } | null>(null);
   const previewUrl = preview?.documentId === document.id ? preview.url : undefined;
@@ -48,10 +46,6 @@ export function DocumentPreview({ document, onAction, onDecision }: DocumentPrev
     <aside aria-label="Document preview and approval" className="grid h-full content-start gap-5 overflow-y-auto bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.09),transparent_14rem)] p-5">
       <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="text-xs font-semibold text-slate-500">Status</span>{document.status ? <Badge tone={statusTone[document.status]}>{document.status}</Badge> : <Badge>Not routed</Badge>}</div><div className="flex items-center gap-1 text-xs text-slate-500"><Eye aria-hidden="true" size={15} />{document.viewedBy.length} viewed</div></div>
 
-      {needsReview ? (
-        <section className="grid gap-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-[0_12px_26px_-22px_rgba(120,53,15,0.45)]"><div><p className="text-sm font-bold text-amber-950">Approval awaiting your decision</p><p className="mt-1 text-xs leading-5 text-amber-800">Stage 2 of 3 <span aria-hidden="true">·</span> {document.recipients.join(", ")}</p></div><div className="grid grid-cols-2 gap-2"><Button className="h-9 gap-1.5 rounded-xl" onClick={() => onDecision(document.id, "Completed")} title="Approve record" variant="default"><Check aria-hidden="true" size={15} />Approve</Button><Button className="h-9 gap-1.5 rounded-xl" onClick={() => onDecision(document.id, "Setback")} title="Decline record" variant="destructive"><X aria-hidden="true" size={15} />Decline</Button></div></section>
-      ) : null}
-
       <section className="rounded-[1.25rem] border border-slate-300 bg-slate-300 p-3 shadow-[0_20px_35px_-28px_rgba(15,23,42,0.65)]">
         {previewUrl ? (
           document.mimeType?.startsWith("image/") ? <div className="relative min-h-[27rem] w-full bg-white"><Image alt={`Preview of ${document.title}`} fill className="object-contain" src={previewUrl} unoptimized /></div> : <iframe className="h-[34rem] w-full bg-white" src={previewUrl} title={`Preview of ${document.title}`} />
@@ -67,7 +61,7 @@ export function DocumentPreview({ document, onAction, onDecision }: DocumentPrev
       </section>
 
       <section className="grid grid-cols-4 gap-2" aria-label="Document quick actions">
-        {actionItems.map((item) => { const Icon = item.icon; return <button className="grid min-h-16 place-items-center gap-1 rounded-2xl border border-slate-200 bg-white p-2 text-[10px] font-semibold text-slate-500 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" key={item.label} onClick={() => onAction(item.label)} title={`${item.label} is a presentation action`} type="button"><Icon aria-hidden="true" size={18} />{item.label}</button>; })}
+        {actionItems.filter((item) => item.label !== "Set Sail" || onSetSail).map((item) => { const Icon = item.icon; const liveSetSail = item.label === "Set Sail" && onSetSail; return <button className="grid min-h-16 place-items-center gap-1 rounded-2xl border border-slate-200 bg-white p-2 text-[10px] font-semibold text-slate-500 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" key={item.label} onClick={() => liveSetSail ? onSetSail() : onAction(item.label)} title={liveSetSail ? "Start a published Set Sail workflow" : `${item.label} is a presentation action`} type="button"><Icon aria-hidden="true" size={18} />{item.label}</button>; })}
       </section>
     </aside>
   );

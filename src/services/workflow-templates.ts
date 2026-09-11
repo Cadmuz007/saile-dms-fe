@@ -43,6 +43,10 @@ export async function listWorkflowRecipientCandidates(signal?: AbortSignal): Pro
   return (await request<WorkflowRecipientCandidates>("/admin/set-sail/recipient-candidates?limit=100", { signal })).data;
 }
 
+export async function listWorkflowDocumentTypeCandidates(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
+  return (await request<Array<{ id: string; name: string }>>("/admin/set-sail/document-type-candidates", { signal })).data;
+}
+
 export async function createWorkflowTemplate(input: WorkflowTemplateInput) {
   return (await request<ManagedWorkflowTemplate>("/admin/set-sail/templates", {
     method: "POST",
@@ -54,6 +58,13 @@ export async function updateWorkflowTemplate(id: string, expectedRevision: numbe
   return (await request<ManagedWorkflowTemplate>(`/admin/set-sail/templates/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify({ ...input, expectedRevision }),
+  })).data;
+}
+
+export async function publishWorkflowTemplate(id: string, expectedRevision: number, documentTypeIds: string[]) {
+  return (await request<ManagedWorkflowTemplate>(`/admin/set-sail/templates/${encodeURIComponent(id)}/publish`, {
+    method: "POST",
+    body: JSON.stringify({ expectedRevision, documentTypeIds }),
   })).data;
 }
 

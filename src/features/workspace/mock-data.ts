@@ -1,4 +1,4 @@
-import type { Folder, MockDocument, RouteRecord } from "./types";
+import type { Folder, MockDocument } from "./types";
 
 export const mockDocuments: MockDocument[] = [
   {
@@ -126,51 +126,4 @@ export const mockFolders: Folder[] = [
   { id: "corporate-notices", name: "Corporate Notices", section: "Public", documentCount: 16, updatedAt: "Today" },
   { id: "annual-disclosures", name: "Annual Disclosures", section: "Public", documentCount: 8, updatedAt: "Aug 25" },
   { id: "news-and-advisories", name: "News & Advisories", section: "Public", documentCount: 11, updatedAt: "Aug 21" },
-];
-
-export const mockRoutes: RouteRecord[] = [
-  {
-    id: "route-001",
-    documentId: "financial-report-q2",
-    routeType: "Inbound",
-    from: "Alex Rivera",
-    to: "Maria Santos",
-    sentAt: "Today, 9:42 AM",
-    responseTime: "1h 18m remaining",
-    status: "Review",
-    remarks: "Stage 2 of 3 · Finance approval",
-  },
-  {
-    id: "route-002",
-    documentId: "procurement-proposal-q3",
-    routeType: "Outbound",
-    from: "Alex Rivera",
-    to: "Luis Mendoza",
-    sentAt: "Yesterday, 3:16 PM",
-    responseTime: "9h 44m remaining",
-    status: "Pending",
-    remarks: "Stage 1 of 2 · Procurement review",
-  },
-  {
-    id: "route-003",
-    documentId: "budget-requirements-2026",
-    routeType: "Inbound",
-    from: "Victor Tan",
-    to: "Maria Santos",
-    sentAt: "Aug 29, 8:30 AM",
-    responseTime: "SLA exceeded by 6h",
-    status: "Setback",
-    remarks: "Finance review overdue",
-  },
-  {
-    id: "route-004",
-    documentId: "technical-presentation",
-    routeType: "Outbound",
-    from: "Alex Rivera",
-    to: "Victor Tan",
-    sentAt: "Aug 26, 1:04 PM",
-    responseTime: "Completed in 5h 23m",
-    status: "Completed",
-    remarks: "All approvers completed",
-  },
 ];

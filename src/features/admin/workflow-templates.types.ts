@@ -1,7 +1,8 @@
-export type WorkflowTemplateStatus = "DRAFT" | "ARCHIVED";
+export type WorkflowTemplateStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 export type WorkflowDecisionRule = "ANY" | "ALL";
 export type WorkflowApprovedAction = "NEXT_STAGE" | "LAST_STAGE" | "APPROVE_DOCUMENT";
-export type WorkflowRejectedAction = "PREVIOUS_STAGE" | "LAST_STAGE" | "CANCEL_DOCUMENT";
+export type WorkflowRejectedAction = "PREVIOUS_STAGE" | "FIRST_STAGE" | "CANCEL_DOCUMENT";
+export type WorkflowDocumentTransform = "CONVERT_TO_PDF" | "CONVERT_TO_PDF_AND_MOVE" | "CONVERT_TO_PDF_AND_ASSIGN" | "MOVE_DOCUMENT" | "DUPLICATE_AND_MOVE";
 export type WorkflowRecipientTargetType = "USER" | "GROUP";
 
 export interface WorkflowRecipientUser {
@@ -33,6 +34,7 @@ export interface WorkflowTemplateStage {
   decisionRule: WorkflowDecisionRule;
   approvedAction: WorkflowApprovedAction;
   rejectedAction: WorkflowRejectedAction;
+  documentTransform: WorkflowDocumentTransform | null;
   recipients: WorkflowTemplateRecipient[];
 }
 
@@ -45,7 +47,13 @@ export interface ManagedWorkflowTemplate {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  publishedAt: string | null;
+  publishedBy: WorkflowRecipientUser | null;
   stages: WorkflowTemplateStage[];
+  documentTypes: Array<{
+    assignedAt: string;
+    documentType: { id: string; name: string; status: string };
+  }>;
   _count: { auditEvents: number };
 }
 
@@ -59,6 +67,7 @@ export interface WorkflowStageInput {
   decisionRule: WorkflowDecisionRule;
   approvedAction: WorkflowApprovedAction;
   rejectedAction: WorkflowRejectedAction;
+  documentTransform: WorkflowDocumentTransform | null;
   recipients: WorkflowRecipientInput[];
 }
 

@@ -4,13 +4,13 @@ import ArrowDownwardRounded from "@mui/icons-material/ArrowDownwardRounded";
 import ArrowUpwardRounded from "@mui/icons-material/ArrowUpwardRounded";
 import DeleteOutlineRounded from "@mui/icons-material/DeleteOutlineRounded";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
-import { Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Autocomplete, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
 import type { MRT_ColumnDef, MRT_PaginationState, MRT_SortingState } from "material-react-table";
 import { useEffect, useMemo, useState } from "react";
 
 import type { AuthenticatedUser } from "@/features/auth/types";
-import { archiveDocumentType, createDocumentType, DocumentTypesRequestError, listDocumentTypes, updateDocumentType } from "@/services/document-types";
-import type { DocumentTypeFieldInput, DocumentTypeInput, DocumentTypesResult, ManagedDocumentType, MetadataFieldKind } from "../document-types.types";
+import { archiveDocumentType, createDocumentType, DocumentTypesRequestError, listDocumentTypes, listVisibilityCandidates, updateDocumentType } from "@/services/document-types";
+import type { DocumentTypeFieldInput, DocumentTypeInput, DocumentTypesResult, ManagedDocumentType, MetadataFieldKind, VisibilityCandidates, VisibilityUser, VisibilityGroup } from "../document-types.types";
 import { PageHeader } from "./admin-page-primitives";
 import { SaileAdminTable } from "./saile-admin-table";
 
@@ -33,6 +33,31 @@ function DocumentTypeForm({ documentType, onClose, onSaved, onSignOut }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [restricted, setRestricted] = useState(documentType?.visibilityRestricted ?? false);
+  const [visibilityUsers, setVisibilityUsers] = useState<VisibilityUser[]>(documentType?.visibilityGrants?.flatMap((grant) => grant.user ? [grant.user] : []) ?? []);
+  const [visibilityGroups, setVisibilityGroups] = useState<VisibilityGroup[]>(documentType?.visibilityGrants?.flatMap((grant) => grant.group ? [grant.group] : []) ?? []);
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [candidates, setCandidates] = useState<VisibilityCandidates>({ users: [], groups: [] });
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidatesError, setCandidatesError] = useState("");
+  const [candidateRetry, setCandidateRetry] = useState(0);
+
+  useEffect(() => {
+    if (!restricted) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setCandidatesLoading(true); setCandidatesError("");
+      listVisibilityCandidates(candidateSearch, controller.signal)
+        .then((result) => { if (!controller.signal.aborted) setCandidates(result); })
+        .catch((requestError: unknown) => {
+          if (controller.signal.aborted) return;
+          setCandidatesError(errorMessage(requestError)); setCandidates({ users: [], groups: [] });
+          if (requestError instanceof DocumentTypesRequestError && requestError.status === 401) onSignOut();
+        })
+        .finally(() => { if (!controller.signal.aborted) setCandidatesLoading(false); });
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [restricted, candidateSearch, candidateRetry, onSignOut]);
 
   function updateField(index: number, next: Partial<DocumentTypeFieldInput>) {
     setFields((current) => current.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...next } : field));
@@ -50,6 +75,8 @@ function DocumentTypeForm({ documentType, onClose, onSaved, onSignOut }: {
     setSaving(true); setError(""); setFieldErrors({});
     const input: DocumentTypeInput = {
       name: name.trim(), description: description.trim() || null,
+      visibility: { restricted, userIds: restricted ? visibilityUsers.map((user) => user.id) : [], groupIds: restricted ? visibilityGroups.map((group) => group.id) : [] },
+      ...(documentType ? { expectedVisibilityRevision: documentType.visibilityRevision } : {}),
       fields: fields.map((field) => ({ ...field, label: field.label.trim(), helpText: field.helpText?.trim() || null, options: field.kind === "SINGLE_SELECT" ? field.options.map((option) => option.trim()).filter(Boolean) : [] })),
     };
     try {
@@ -67,9 +94,28 @@ function DocumentTypeForm({ documentType, onClose, onSaved, onSignOut }: {
       <DialogTitle id="document-type-form-title">{documentType ? "Edit document type" : "Create document type"}</DialogTitle>
       <DialogContent><Stack spacing={2.5} sx={{ pt: 1 }}>
         {error && <Alert severity="error">{error}</Alert>}
-        <Alert severity="info">Attachment fields remain unavailable until attachment scanning, storage, access, retention, and audit behavior are implemented.</Alert>
+        <Alert severity="info">Attachment metadata fields are not available yet. Files can be added as document attachments after upload.</Alert>
         <TextField autoFocus required fullWidth label="Document type name" value={name} disabled={saving} error={!!fieldErrors.name} helperText={fieldErrors.name} slotProps={{ htmlInput: { maxLength: 160 } }} onChange={(event) => setName(event.target.value)} />
         <TextField fullWidth multiline minRows={2} label="Description" value={description} disabled={saving} error={!!fieldErrors.description} helperText={fieldErrors.description} slotProps={{ htmlInput: { maxLength: 1000 } }} onChange={(event) => setDescription(event.target.value)} />
+        <Box component="fieldset" sx={{ m: 0, p: 2, border: "1px solid #e2e8f0", borderRadius: 1 }}>
+          <Typography component="legend" sx={{ px: 1, fontSize: 16, fontWeight: 750 }}>Visibility Settings</Typography>
+          <Stack spacing={2}>
+            <TextField select fullWidth label="Who can see documents of this type?" value={restricted ? "SELECTED" : "EXISTING"} disabled={saving} onChange={(event) => setRestricted(event.target.value === "SELECTED")}>
+              <MenuItem value="EXISTING">Use existing document access</MenuItem>
+              <MenuItem value="SELECTED">Selected users and groups</MenuItem>
+            </TextField>
+            <Typography sx={{ color: "text.secondary", fontSize: 13 }}>{restricted ? "Only selected users and current members of selected active groups can see these documents. They must also have document access. Folder sharing, Public visibility, ownership, and workflow assignment do not bypass this restriction." : "Documents follow their existing library, folder, sharing, and workflow access rules."}</Typography>
+            {restricted && <>
+              <TextField size="small" label="Search users and groups" value={candidateSearch} disabled={saving} onChange={(event) => setCandidateSearch(event.target.value)} helperText="Up to 50 matches of each kind. Search to find more recipients." />
+              {candidatesError && <Alert severity="error" action={<Button onClick={() => setCandidateRetry((value) => value + 1)}>Retry</Button>}>{candidatesError}</Alert>}
+              <Autocomplete multiple disableCloseOnSelect options={candidates.users} value={visibilityUsers} loading={candidatesLoading} disabled={saving} filterOptions={(options) => options} isOptionEqualToValue={(option, value) => option.id === value.id} getOptionLabel={(user) => `${user.firstName} ${user.lastName} (${user.email})${user.status !== "ACTIVE" ? " — inactive" : ""}`} onChange={(_, value) => setVisibilityUsers(value)} renderInput={(params) => <TextField {...params} label="Visible to users" placeholder="Select users" />} noOptionsText="No matching active users" />
+              <Autocomplete multiple disableCloseOnSelect options={candidates.groups} value={visibilityGroups} loading={candidatesLoading} disabled={saving} filterOptions={(options) => options} isOptionEqualToValue={(option, value) => option.id === value.id} getOptionLabel={(group) => `${group.name}${group.status !== "ACTIVE" ? " — inactive" : ""}`} onChange={(_, value) => setVisibilityGroups(value)} renderInput={(params) => <TextField {...params} label="Visible to groups" placeholder="Select groups" />} noOptionsText="No matching active groups" />
+              {!visibilityUsers.length && !visibilityGroups.length && <Typography color="error" role="status" sx={{ fontSize: 13 }}>Select at least one user or group.</Typography>}
+            </>}
+            {fieldErrors.visibility && <Typography color="error" role="alert">{fieldErrors.visibility}</Typography>}
+            {documentType && <Alert severity="warning">Saving visibility settings applies to all existing and future documents of this type. Removed recipients lose access, including access to pending workflow tasks.</Alert>}
+          </Stack>
+        </Box>
         <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}><Box><Typography sx={{ fontSize: 16, fontWeight: 750 }}>Metadata fields</Typography><Typography sx={{ color: "text.secondary", fontSize: 12 }}>The displayed order is also the upload-form order.</Typography></Box><Button onClick={() => setFields((current) => [...current, blankField()])} disabled={saving}>Add field</Button></Stack>
         {!fields.length && <Paper elevation={0} sx={{ border: "1px dashed #cbd5e1", p: 2 }}><Typography color="text.secondary" sx={{ fontSize: 13 }}>This type has no metadata fields yet.</Typography></Paper>}
         {fields.map((field, index) => <Paper elevation={0} key={field.id ?? `new-${index}`} sx={{ border: "1px solid #e2e8f0", borderRadius: 1, p: 2 }}><Stack spacing={1.5}>
@@ -86,7 +132,7 @@ function DocumentTypeForm({ documentType, onClose, onSaved, onSignOut }: {
           <FormControlLabel control={<Checkbox checked={field.isRequired} disabled={saving} onChange={(event) => updateField(index, { isRequired: event.target.checked })} />} label="Required when uploading a document of this type" />
         </Stack></Paper>)}
       </Stack></DialogContent>
-      <DialogActions sx={{ p: 2.5 }}><Button disabled={saving} onClick={onClose}>Cancel</Button><Button type="submit" variant="contained" disabled={saving || !name.trim()}>{saving ? "Saving…" : documentType ? "Save changes" : "Create document type"}</Button></DialogActions>
+      <DialogActions sx={{ p: 2.5 }}><Button disabled={saving} onClick={onClose}>Cancel</Button><Button type="submit" variant="contained" disabled={saving || !name.trim() || (restricted && !visibilityUsers.length && !visibilityGroups.length)}>{saving ? "Saving…" : documentType ? "Save changes" : "Create document type"}</Button></DialogActions>
     </form>
   </Dialog>;
 }
@@ -126,6 +172,7 @@ export function DocumentTypesPage({ currentUser, onSignOut }: { currentUser: Aut
   const columns = useMemo<MRT_ColumnDef<ManagedDocumentType>[]>(() => [
     { accessorKey: "name", header: "Document type", Cell: ({ row }) => <Box><Typography sx={{ fontSize: 13, fontWeight: 700 }}>{row.original.name}</Typography><Typography sx={{ color: "text.secondary", fontSize: 11 }}>{row.original.description || "No description"}</Typography></Box> },
     { id: "fields", header: "Metadata fields", enableSorting: false, Cell: ({ row }) => row.original.fields.length },
+    { id: "visibility", header: "Visibility", enableSorting: false, Cell: ({ row }) => <Chip size="small" color={row.original.visibilityRestricted ? "warning" : "default"} label={row.original.visibilityRestricted ? "Selected users/groups" : "Existing access"} /> },
     { id: "documents", header: "Documents", enableSorting: false, Cell: ({ row }) => row.original._count.documents },
     { accessorKey: "updatedAt", header: "Last updated", Cell: ({ row }) => new Date(row.original.updatedAt).toLocaleString() },
     { accessorKey: "status", header: "Status", Cell: ({ row }) => <Chip size="small" color={row.original.status === "ACTIVE" ? "success" : "default"} label={row.original.status === "ACTIVE" ? "Active" : "Archived"} /> },
@@ -141,7 +188,7 @@ export function DocumentTypesPage({ currentUser, onSignOut }: { currentUser: Aut
   }
 
   return <Stack spacing={3}>
-    <PageHeader title="Document types" description="Configure reusable, ordered metadata fields for document uploads." action={canCreate ? { label: "Create document type", icon: <DescriptionOutlined />, onClick: () => setEditing(null) } : undefined} />
+    <PageHeader title="Document types" description="Configure document visibility and reusable metadata fields." action={canCreate ? { label: "Create document type", icon: <DescriptionOutlined />, onClick: () => setEditing(null) } : undefined} />
     {notice && <Alert severity="success" onClose={() => setNotice("")}>{notice}</Alert>}
     {!canRead ? <Alert severity="info">You do not have permission to view document types.</Alert> : <>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2}><TextField fullWidth label="Search document types" value={search} onChange={(event) => { setSearch(event.target.value); setPagination((current) => ({ ...current, pageIndex: 0 })); }} /><TextField select label="Status" value={status} sx={{ minWidth: 180 }} onChange={(event) => { setStatus(event.target.value); setPagination((current) => ({ ...current, pageIndex: 0 })); }}><MenuItem value="">All statuses</MenuItem><MenuItem value="ACTIVE">Active</MenuItem><MenuItem value="ARCHIVED">Archived</MenuItem></TextField><Button disabled={loading} onClick={() => setRefresh((value) => value + 1)}>Refresh</Button></Stack>

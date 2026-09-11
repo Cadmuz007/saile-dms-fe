@@ -1,5 +1,5 @@
 import { clearSession, readStoredSession } from "@/features/auth/session-storage";
-import type { DocumentTypeInput, DocumentTypesResult, ManagedDocumentType } from "@/features/admin/document-types.types";
+import type { AvailableDocumentType, DocumentTypeInput, DocumentTypesResult, ManagedDocumentType, VisibilityCandidates } from "@/features/admin/document-types.types";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
@@ -29,12 +29,16 @@ export async function listDocumentTypes(query: Record<string, string>, signal: A
   return { data: result.data, meta: result.meta! };
 }
 
-export async function listAvailableDocumentTypes(signal?: AbortSignal): Promise<ManagedDocumentType[]> {
-  return (await request<ManagedDocumentType[]>("/document-types", { signal })).data;
+export async function listAvailableDocumentTypes(signal?: AbortSignal): Promise<AvailableDocumentType[]> {
+  return (await request<AvailableDocumentType[]>("/document-types", { signal })).data;
 }
 
 export async function createDocumentType(input: DocumentTypeInput) {
   return (await request<ManagedDocumentType>("/admin/document-types", { method: "POST", body: JSON.stringify(input) })).data;
+}
+
+export async function listVisibilityCandidates(search: string, signal?: AbortSignal): Promise<VisibilityCandidates> {
+  return (await request<VisibilityCandidates>(`/admin/document-types/visibility-candidates?${new URLSearchParams({ search })}`, { signal })).data;
 }
 
 export async function updateDocumentType(id: string, input: DocumentTypeInput) {

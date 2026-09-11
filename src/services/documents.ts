@@ -10,7 +10,7 @@ export interface ApiFolder {
 export interface ApiDocument {
   id: string; title: string; subject: string | null; description: string | null; classification: "CLASSIFIED" | "UNCLASSIFIED";
   status: "ACTIVE" | "ARCHIVED"; area: ApiLibraryArea; folderId: string | null; ownerUserId: string; currentVersionNumber: number;
-  canMove?: boolean; canArchive?: boolean; canRestore?: boolean;
+  canMove?: boolean; canArchive?: boolean; canRestore?: boolean; canStartWorkflow?: boolean;
   archivedAt: string | null; archivedByFolderId: string | null; createdAt: string; updatedAt: string;
   documentTypeId: string | null; documentType: { id: string; name: string } | null;
   metadataValues: Array<{

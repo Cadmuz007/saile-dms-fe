@@ -4,6 +4,7 @@ import AddRounded from "@mui/icons-material/AddRounded";
 import ArrowDownwardRounded from "@mui/icons-material/ArrowDownwardRounded";
 import ArrowUpwardRounded from "@mui/icons-material/ArrowUpwardRounded";
 import DeleteOutlineRounded from "@mui/icons-material/DeleteOutlineRounded";
+import PublishOutlined from "@mui/icons-material/PublishOutlined";
 import SailingOutlined from "@mui/icons-material/SailingOutlined";
 import {
   Alert,
@@ -29,11 +30,13 @@ import type { MRT_ColumnDef, MRT_PaginationState, MRT_SortingState } from "mater
 import { useEffect, useMemo, useState } from "react";
 
 import type { AuthenticatedUser } from "@/features/auth/types";
+import { listWorkflowDocumentTypeCandidates } from "@/services/workflow-templates";
 import {
   archiveWorkflowTemplate,
   createWorkflowTemplate,
   listWorkflowRecipientCandidates,
   listWorkflowTemplates,
+  publishWorkflowTemplate,
   updateWorkflowTemplate,
   WorkflowTemplatesRequestError,
 } from "@/services/workflow-templates";
@@ -41,6 +44,7 @@ import type {
   ManagedWorkflowTemplate,
   WorkflowApprovedAction,
   WorkflowDecisionRule,
+  WorkflowDocumentTransform,
   WorkflowRecipientCandidates,
   WorkflowRecipientInput,
   WorkflowRejectedAction,
@@ -65,8 +69,15 @@ const approvedActions: Array<{ value: WorkflowApprovedAction; label: string }> =
 ];
 const rejectedActions: Array<{ value: WorkflowRejectedAction; label: string }> = [
   { value: "PREVIOUS_STAGE", label: "Go back to the previous level" },
-  { value: "LAST_STAGE", label: "Go back to the last level" },
+  { value: "FIRST_STAGE", label: "Go back to the first level" },
   { value: "CANCEL_DOCUMENT", label: "Cancel the document" },
+];
+const documentTransforms: Array<{ value: WorkflowDocumentTransform; label: string }> = [
+  { value: "CONVERT_TO_PDF", label: "Convert Document to PDF" },
+  { value: "CONVERT_TO_PDF_AND_MOVE", label: "Convert Document to PDF and Move to…" },
+  { value: "CONVERT_TO_PDF_AND_ASSIGN", label: "Convert Document to PDF and Assign to…" },
+  { value: "MOVE_DOCUMENT", label: "Move Document to…" },
+  { value: "DUPLICATE_AND_MOVE", label: "Duplicate Document and Move to…" },
 ];
 
 const blankStage = (position: number): WorkflowStageInput => ({
@@ -74,6 +85,7 @@ const blankStage = (position: number): WorkflowStageInput => ({
   decisionRule: "ANY",
   approvedAction: "NEXT_STAGE",
   rejectedAction: "PREVIOUS_STAGE",
+  documentTransform: null,
   recipients: [],
 });
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "The request could not be completed.";
@@ -86,6 +98,7 @@ function templateStages(template: ManagedWorkflowTemplate | null): WorkflowStage
     decisionRule: stage.decisionRule,
     approvedAction: stage.approvedAction,
     rejectedAction: stage.rejectedAction,
+    documentTransform: stage.documentTransform,
     recipients: stage.recipients.map((recipient) => recipient.userId
       ? { targetType: "USER", targetId: recipient.userId }
       : { targetType: "GROUP", targetId: recipient.groupId! }),
@@ -186,7 +199,10 @@ function WorkflowTemplateForm({ template, onClose, onSaved, onSignOut }: {
 
   const valid = name.trim().length > 0
     && stages.length > 0
-    && stages.every((stage) => stage.name.trim().length > 0 && stage.recipients.length > 0);
+    && stages.every((stage, index) => stage.name.trim().length > 0
+      && stage.recipients.length > 0
+      && (stage.approvedAction !== "APPROVE_DOCUMENT" || (index === stages.length - 1 && Boolean(stage.documentTransform)))
+      && (index !== stages.length - 1 || stage.approvedAction !== "NEXT_STAGE"));
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -216,12 +232,15 @@ function WorkflowTemplateForm({ template, onClose, onSaved, onSignOut }: {
       <DialogContent><Stack spacing={2.5} sx={{ pt: 1 }}>
         {error && <Alert severity="error">{error}</Alert>}
         {candidateError && <Alert severity="error">{candidateError}</Alert>}
-        <Alert severity="info">This slice saves an auditable draft only. Publishing, document-type assignment, and workflow execution remain disabled until transition rules are approved.</Alert>
+        <Alert severity="info">Save the draft before publishing it. Publishing creates an immutable configuration; workflow actions remain disabled while the remaining runtime parameters are finalized.</Alert>
         <TextField autoFocus required fullWidth label="Name of Set Sail" value={name} disabled={saving} slotProps={{ htmlInput: { maxLength: 160 } }} onChange={(event) => setName(event.target.value)} />
         <TextField fullWidth multiline minRows={2} label="Description" value={description} disabled={saving} slotProps={{ htmlInput: { maxLength: 1000 } }} onChange={(event) => setDescription(event.target.value)} />
         <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}>
           <Box><Typography sx={{ fontSize: 16, fontWeight: 750 }}>Sequential stages</Typography><Typography sx={{ color: "text.secondary", fontSize: 12 }}>Stage order and every revision are retained in the audit history.</Typography></Box>
-          <Button startIcon={<AddRounded />} disabled={saving || stages.length >= 30} onClick={() => setStages((current) => [...current, blankStage(current.length)])}>Add stage</Button>
+          <Button startIcon={<AddRounded />} disabled={saving || stages.length >= 30} onClick={() => setStages((current) => [
+            ...current.map((stage, index) => index === current.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT" ? { ...stage, approvedAction: "NEXT_STAGE" as const, documentTransform: null } : stage),
+            blankStage(current.length),
+          ])}>Add stage</Button>
         </Stack>
         {stages.map((stage, index) => <Paper key={index} elevation={0} sx={{ border: "1px solid #e2e8f0", borderRadius: 1, p: 2 }}><Stack spacing={2}>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ alignItems: { sm: "center" } }}>
@@ -246,16 +265,19 @@ function WorkflowTemplateForm({ template, onClose, onSaved, onSignOut }: {
           </FormControl>
           <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr" } }}>
             <TextField select label="Decision making" value={stage.decisionRule} disabled={saving} onChange={(event) => updateStage(index, { decisionRule: event.target.value as WorkflowDecisionRule })}>
-              <MenuItem value="ANY">OR — any recipient</MenuItem>
-              <MenuItem value="ALL">AND — all recipients</MenuItem>
+              <MenuItem value="ANY">OR — one recipient decides</MenuItem>
+              <MenuItem value="ALL">AND — all recipients decide</MenuItem>
             </TextField>
-            <TextField select label="Condition if approved" value={stage.approvedAction} disabled={saving} onChange={(event) => updateStage(index, { approvedAction: event.target.value as WorkflowApprovedAction })}>
-              {approvedActions.map((action) => <MenuItem key={action.value} value={action.value}>{action.label}</MenuItem>)}
+            <TextField select label="Condition if approved" value={stage.approvedAction} disabled={saving} error={(index === stages.length - 1 && stage.approvedAction === "NEXT_STAGE") || (index !== stages.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT")} helperText={index === stages.length - 1 && stage.approvedAction === "NEXT_STAGE" ? "The final stage cannot move to the next level." : index !== stages.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT" ? "Approve the document is available only on the final stage." : undefined} onChange={(event) => { const approvedAction = event.target.value as WorkflowApprovedAction; updateStage(index, { approvedAction, documentTransform: approvedAction === "APPROVE_DOCUMENT" ? stage.documentTransform : null }); }}>
+              {approvedActions.map((action) => <MenuItem disabled={(index === stages.length - 1 && action.value === "NEXT_STAGE") || (index !== stages.length - 1 && action.value === "APPROVE_DOCUMENT")} key={action.value} value={action.value}>{action.label}</MenuItem>)}
             </TextField>
             <TextField select label="Condition if rejected" value={stage.rejectedAction} disabled={saving} onChange={(event) => updateStage(index, { rejectedAction: event.target.value as WorkflowRejectedAction })}>
               {rejectedActions.map((action) => <MenuItem key={action.value} value={action.value}>{action.label}</MenuItem>)}
             </TextField>
           </Box>
+          {index === stages.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT" ? <TextField required select fullWidth label="Transform Document" value={stage.documentTransform ?? ""} disabled={saving} onChange={(event) => updateStage(index, { documentTransform: event.target.value as WorkflowDocumentTransform })}>
+            {documentTransforms.map((transform) => <MenuItem key={transform.value} value={transform.value}>{transform.label}</MenuItem>)}
+          </TextField> : null}
         </Stack></Paper>)}
       </Stack></DialogContent>
       <DialogActions sx={{ p: 2.5 }}>
@@ -266,10 +288,75 @@ function WorkflowTemplateForm({ template, onClose, onSaved, onSignOut }: {
   </Dialog>;
 }
 
+function PublishWorkflowDialog({ template, onClose, onPublished, onSignOut }: {
+  template: ManagedWorkflowTemplate;
+  onClose: () => void;
+  onPublished: () => void;
+  onSignOut: () => void;
+}) {
+  const [documentTypes, setDocumentTypes] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listWorkflowDocumentTypeCandidates(controller.signal)
+      .then((types) => { if (!controller.signal.aborted) setDocumentTypes(types); })
+      .catch((requestError: unknown) => {
+        if (controller.signal.aborted) return;
+        setError(errorMessage(requestError));
+        if (requestError instanceof WorkflowTemplatesRequestError && requestError.status === 401) onSignOut();
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [onSignOut]);
+
+  async function confirmPublish() {
+    if (publishing || loading) return;
+    setPublishing(true);
+    setError("");
+    try {
+      await publishWorkflowTemplate(template.id, template.configurationRevision, selectedIds);
+      onPublished();
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+      if (requestError instanceof WorkflowTemplatesRequestError && requestError.status === 401) onSignOut();
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  return <Dialog open fullWidth maxWidth="sm" onClose={() => { if (!publishing) onClose(); }} aria-labelledby="publish-set-sail-title">
+    <DialogTitle id="publish-set-sail-title">Publish Set Sail workflow?</DialogTitle>
+    <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
+      {error && <Alert severity="error">{error}</Alert>}
+      <Alert severity="warning">Revision {template.configurationRevision} will become immutable. Its stages, recipients, and document-type assignments remain available in the audit history.</Alert>
+      <FormControl fullWidth disabled={loading || publishing}>
+        <InputLabel id="publish-document-types-label">Assigned document types (optional)</InputLabel>
+        <Select<string[]>
+          multiple
+          labelId="publish-document-types-label"
+          value={selectedIds}
+          onChange={(event) => setSelectedIds(typeof event.target.value === "string" ? event.target.value.split(",") : event.target.value)}
+          input={<OutlinedInput label="Assigned document types (optional)" />}
+          renderValue={(selected) => selected.length === 0 ? "No document types" : <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "wrap" }}>{selected.map((id) => <Chip key={id} size="small" label={documentTypes.find((type) => type.id === id)?.name ?? id} />)}</Stack>}
+        >
+          {documentTypes.map((type) => <MenuItem key={type.id} value={type.id}>{type.name}</MenuItem>)}
+        </Select>
+      </FormControl>
+      <Typography sx={{ color: "text.secondary", fontSize: 12 }}>Publishing makes the template selectable by its assigned document types. Starting a workflow from a document is not enabled yet.</Typography>
+    </Stack></DialogContent>
+    <DialogActions><Button disabled={publishing} onClick={onClose}>Cancel</Button><Button variant="contained" startIcon={<PublishOutlined />} disabled={publishing || loading || Boolean(error)} onClick={confirmPublish}>{publishing ? "Publishing…" : "Publish"}</Button></DialogActions>
+  </Dialog>;
+}
+
 export function SetSailPage({ currentUser, onSignOut }: { currentUser: AuthenticatedUser; onSignOut: () => void }) {
   const canRead = currentUser.permissions.includes("admin.workflows.read");
   const canCreate = currentUser.permissions.includes("admin.workflows.create");
   const canUpdate = currentUser.permissions.includes("admin.workflows.update");
+  const canPublish = currentUser.permissions.includes("admin.workflows.publish");
   const canArchive = currentUser.permissions.includes("admin.workflows.archive");
   const [pagination, setPagination] = useState<MRT_PaginationState>({ pageIndex: 0, pageSize: 10 });
   const [sorting, setSorting] = useState<MRT_SortingState>([{ id: "updatedAt", desc: true }]);
@@ -281,6 +368,7 @@ export function SetSailPage({ currentUser, onSignOut }: { currentUser: Authentic
   const [notice, setNotice] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [editing, setEditing] = useState<ManagedWorkflowTemplate | null | undefined>();
+  const [publishing, setPublishing] = useState<ManagedWorkflowTemplate | null>(null);
   const [archiving, setArchiving] = useState<ManagedWorkflowTemplate | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -312,14 +400,15 @@ export function SetSailPage({ currentUser, onSignOut }: { currentUser: Authentic
   }, [canRead, pagination, sorting, search, status, refresh, onSignOut]);
 
   const columns = useMemo<MRT_ColumnDef<ManagedWorkflowTemplate>[]>(() => [
-    { accessorKey: "name", header: "Set Sail draft", Cell: ({ row }) => <Box><Typography sx={{ fontSize: 13, fontWeight: 700 }}>{row.original.name}</Typography><Typography sx={{ color: "text.secondary", fontSize: 11 }}>{row.original.description || "No description"}</Typography></Box> },
+    { accessorKey: "name", header: "Set Sail workflow", Cell: ({ row }) => <Box><Typography sx={{ fontSize: 13, fontWeight: 700 }}>{row.original.name}</Typography><Typography sx={{ color: "text.secondary", fontSize: 11 }}>{row.original.description || "No description"}</Typography></Box> },
     { id: "stages", header: "Stages", enableSorting: false, Cell: ({ row }) => row.original.stages.length },
     { id: "recipients", header: "Recipients", enableSorting: false, Cell: ({ row }) => new Set(row.original.stages.flatMap((stage) => stage.recipients.map((recipient) => recipient.userId ?? recipient.groupId))).size },
+    { id: "documentTypes", header: "Document types", enableSorting: false, Cell: ({ row }) => row.original.documentTypes.length > 0 ? row.original.documentTypes.map((assignment) => assignment.documentType.name).join(", ") : "—" },
     { accessorKey: "configurationRevision", header: "Revision", enableSorting: false },
     { accessorKey: "updatedAt", header: "Last updated", Cell: ({ row }) => new Date(row.original.updatedAt).toLocaleString() },
-    { accessorKey: "status", header: "Status", Cell: ({ row }) => <Chip size="small" color={row.original.status === "DRAFT" ? "info" : "default"} label={row.original.status === "DRAFT" ? "Draft" : "Archived"} /> },
-    { id: "actions", header: "Actions", enableSorting: false, Cell: ({ row }) => row.original.status === "DRAFT" && <Stack direction="row">{canUpdate && <Button onClick={() => setEditing(row.original)}>Edit</Button>}{canArchive && <Button color="warning" onClick={() => setArchiving(row.original)}>Archive</Button>}</Stack> },
-  ], [canArchive, canUpdate]);
+    { accessorKey: "status", header: "Status", Cell: ({ row }) => <Chip size="small" color={row.original.status === "DRAFT" ? "info" : row.original.status === "PUBLISHED" ? "success" : "default"} label={row.original.status === "DRAFT" ? "Draft" : row.original.status === "PUBLISHED" ? "Published" : "Archived"} /> },
+    { id: "actions", header: "Actions", enableSorting: false, Cell: ({ row }) => row.original.status !== "ARCHIVED" && <Stack direction="row">{row.original.status === "DRAFT" && canUpdate && <Button onClick={() => setEditing(row.original)}>Edit</Button>}{row.original.status === "DRAFT" && canPublish && <Button startIcon={<PublishOutlined />} onClick={() => setPublishing(row.original)}>Publish</Button>}{canArchive && <Button color="warning" onClick={() => setArchiving(row.original)}>Archive</Button>}</Stack> },
+  ], [canArchive, canPublish, canUpdate]);
 
   async function confirmArchive() {
     if (!archiving || saving) return;
@@ -328,7 +417,7 @@ export function SetSailPage({ currentUser, onSignOut }: { currentUser: Authentic
     try {
       await archiveWorkflowTemplate(archiving.id);
       setArchiving(null);
-      setNotice("Set Sail draft archived. Its configuration revisions and audit history were retained.");
+      setNotice("Set Sail workflow archived. Its configuration revisions, assignments, and audit history were retained.");
       setRefresh((value) => value + 1);
     } catch (requestError) {
       setError(errorMessage(requestError));
@@ -341,14 +430,14 @@ export function SetSailPage({ currentUser, onSignOut }: { currentUser: Authentic
   if (!canRead) return <Alert severity="warning">You do not have permission to view Set Sail workflow templates.</Alert>;
 
   return <Stack spacing={3}>
-    <PageHeader title="Set Sail" description="Create auditable sequential workflow drafts before publishing and document routing are enabled." action={canCreate ? { label: "Create Set Sail draft", icon: <SailingOutlined />, onClick: () => setEditing(null) } : undefined} />
-    <Alert severity="info">Draft management is live. Publishing, document-type assignment, and workflow execution remain the next Milestone 3 slice after approval-transition rules are confirmed.</Alert>
+    <PageHeader title="Set Sail" description="Create, revise, and immutably publish sequential workflow templates for selected document types." action={canCreate ? { label: "Create Set Sail draft", icon: <SailingOutlined />, onClick: () => setEditing(null) } : undefined} />
+    <Alert severity="info">Draft management, immutable publishing, and optional document-type assignment are live. Workflow execution remains disabled until approval-transition rules are confirmed.</Alert>
     {notice && <Alert severity="success" onClose={() => setNotice("")}>{notice}</Alert>}
     {error && <Alert severity="error">{error}</Alert>}
     <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-      <TextField label="Search Set Sail drafts" size="small" value={search} onChange={(event) => { setSearch(event.target.value); setPagination((current) => ({ ...current, pageIndex: 0 })); }} />
+      <TextField label="Search Set Sail workflows" size="small" value={search} onChange={(event) => { setSearch(event.target.value); setPagination((current) => ({ ...current, pageIndex: 0 })); }} />
       <TextField select label="Status" size="small" value={status} sx={{ minWidth: 160 }} onChange={(event) => { setStatus(event.target.value); setPagination((current) => ({ ...current, pageIndex: 0 })); }}>
-        <MenuItem value="">All</MenuItem><MenuItem value="DRAFT">Draft</MenuItem><MenuItem value="ARCHIVED">Archived</MenuItem>
+        <MenuItem value="">All</MenuItem><MenuItem value="DRAFT">Draft</MenuItem><MenuItem value="PUBLISHED">Published</MenuItem><MenuItem value="ARCHIVED">Archived</MenuItem>
       </TextField>
     </Stack>
     <SaileAdminTable
@@ -372,10 +461,20 @@ export function SetSailPage({ currentUser, onSignOut }: { currentUser: Authentic
       }}
       onSignOut={onSignOut}
     />}
+    {publishing && <PublishWorkflowDialog
+      template={publishing}
+      onClose={() => setPublishing(null)}
+      onPublished={() => {
+        setPublishing(null);
+        setNotice("Set Sail workflow published. Its configuration and document-type assignments are now immutable.");
+        setRefresh((value) => value + 1);
+      }}
+      onSignOut={onSignOut}
+    />}
     <Dialog open={archiving !== null} onClose={() => { if (!saving) setArchiving(null); }} aria-labelledby="archive-set-sail-title">
-      <DialogTitle id="archive-set-sail-title">Archive Set Sail draft?</DialogTitle>
-      <DialogContent><Typography sx={{ pt: 1 }}>The draft will no longer be editable. Its stages, recipients, revisions, and audit snapshots remain retained.</Typography></DialogContent>
-      <DialogActions><Button disabled={saving} onClick={() => setArchiving(null)}>Cancel</Button><Button color="warning" variant="contained" disabled={saving} onClick={confirmArchive}>{saving ? "Archiving…" : "Archive draft"}</Button></DialogActions>
+      <DialogTitle id="archive-set-sail-title">Archive Set Sail workflow?</DialogTitle>
+      <DialogContent><Typography sx={{ pt: 1 }}>The workflow will no longer be active. Its stages, recipients, document-type assignments, revisions, and audit snapshots remain retained.</Typography></DialogContent>
+      <DialogActions><Button disabled={saving} onClick={() => setArchiving(null)}>Cancel</Button><Button color="warning" variant="contained" disabled={saving} onClick={confirmArchive}>{saving ? "Archiving…" : "Archive workflow"}</Button></DialogActions>
     </Dialog>
   </Stack>;
 }

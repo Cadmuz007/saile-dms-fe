@@ -7,30 +7,31 @@ import { ArrowRight, CheckCircle2, CircleAlert, Clock3, FolderClock, Inbox, Plus
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-import type { Folder, MockDocument, RouteRecord } from "../types";
+import type { Folder, MockDocument } from "../types";
+import type { WorkflowRoute } from "../workflow.types";
 import { DocumentTile } from "./document-tile";
 import { FolderTile } from "./folder-tile";
 
 interface HomeViewProps {
   documents: MockDocument[];
   folders: Folder[];
-  routes: RouteRecord[];
+  routes: WorkflowRoute[];
+  routeDocuments: MockDocument[];
   onCreateRecord: () => void;
   onOpenDocument: (document: MockDocument) => void;
   onShowRoutes: () => void;
 }
 
-const attentionItems = [
-  { label: "For your review", value: "04", icon: Clock3, tone: "text-amber-700 bg-amber-50 border-amber-100" },
-  { label: "Routed today", value: "12", icon: ArrowRight, tone: "text-violet-700 bg-violet-50 border-violet-100" },
-  { label: "Completed this week", value: "28", icon: CheckCircle2, tone: "text-emerald-700 bg-emerald-50 border-emerald-100" },
-];
-
-export function HomeView({ documents, folders, routes, onCreateRecord, onOpenDocument, onShowRoutes }: HomeViewProps) {
+export function HomeView({ documents, folders, routes, routeDocuments, onCreateRecord, onOpenDocument, onShowRoutes }: HomeViewProps) {
   const [routeType, setRouteType] = useState<"Inbound" | "Outbound">("Inbound");
+  const attentionItems = [
+    { label: "For your review", value: routes.filter((route) => route.direction === "INBOUND").length, icon: Clock3, tone: "text-amber-700 bg-amber-50 border-amber-100" },
+    { label: "Workflows started", value: routes.filter((route) => route.direction === "OUTBOUND").length, icon: ArrowRight, tone: "text-violet-700 bg-violet-50 border-violet-100" },
+    { label: "Completed", value: routes.filter((route) => route.status === "COMPLETED").length, icon: CheckCircle2, tone: "text-emerald-700 bg-emerald-50 border-emerald-100" },
+  ];
   const inboxDocuments = routes
-    .filter((route) => route.routeType === routeType)
-    .map((route) => documents.find((document) => document.id === route.documentId))
+    .filter((route) => route.direction === (routeType === "Inbound" ? "INBOUND" : "OUTBOUND"))
+    .map((route) => routeDocuments.find((document) => document.id === route.document.id))
     .filter((document): document is MockDocument => Boolean(document));
 
   return (

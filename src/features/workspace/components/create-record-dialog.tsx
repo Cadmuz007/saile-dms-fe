@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ManagedDocumentType } from "@/features/admin/document-types.types";
+import type { AvailableDocumentType } from "@/features/admin/document-types.types";
 
 import type { LibrarySection, MockDocument } from "../types";
 
@@ -25,7 +25,7 @@ type RecordFormValues = z.infer<typeof recordSchema>;
 interface CreateRecordDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  documentTypes: ManagedDocumentType[];
+  documentTypes: AvailableDocumentType[];
   onCreate: (record: { title: string; section: LibrarySection; classification: MockDocument["classification"]; documentTypeId?: string; metadata: Array<{ fieldId: string; value: string }>; file: File }) => Promise<void>;
 }
 
