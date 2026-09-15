@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { AuthenticatedUser } from "@/features/auth/types";
-import { archiveDocument as archiveDocumentRequest, archiveFolder as archiveFolderRequest, createFolder as createFolderRequest, listArchivedResources, listDocuments, listFolders, moveDocument as moveDocumentRequest, moveFolder as moveFolderRequest, restoreDocument as restoreDocumentRequest, restoreFolder as restoreFolderRequest, uploadDocument } from "@/services/documents";
+import { archiveDocument as archiveDocumentRequest, archiveFolder as archiveFolderRequest, createFolder as createFolderRequest, listArchivedResources, listDocuments, listFolders, moveDocument as moveDocumentRequest, moveFolder as moveFolderRequest, printDocument, restoreDocument as restoreDocumentRequest, restoreFolder as restoreFolderRequest, uploadDocument } from "@/services/documents";
 import type { ApiDocument, ApiFolder, ApiLibraryArea } from "@/services/documents";
 import { listAvailableDocumentTypes } from "@/services/document-types";
 import type { AvailableDocumentType } from "@/features/admin/document-types.types";
@@ -28,6 +28,9 @@ import { SetSailDialog } from "./set-sail-dialog";
 import { SectionsView } from "./sections-view";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { WorkspaceTopNav } from "./workspace-top-nav";
+import { BarcodeDialog } from "./barcode-dialog";
+import { BarcodeManagerView } from "./barcode-manager-view";
+import { printBlob } from "../printing";
 
 interface WorkspaceShellProps { currentUser: AuthenticatedUser; onSignOut: () => void; }
 
@@ -56,7 +59,7 @@ function mapDocument(document: ApiDocument, folderNames: Map<string, string>): M
     folder: document.folderId ? folderNames.get(document.folderId) ?? "Folder" : "Root", subject: document.subject ?? "", description: document.description ?? "",
     classification: document.classification === "CLASSIFIED" ? "Classified" : "Unclassified", size: displaySize(version?.byteSize ?? 0),
     uploadedAt: new Date(version?.uploadedAt ?? document.createdAt).toLocaleString(), uploadedBy: version ? `${version.uploadedBy.firstName} ${version.uploadedBy.lastName}` : "",
-    version: `${document.currentVersionNumber}.0`, barcode: `SDL-${document.id.slice(0, 8).toUpperCase()}`, recipients: [], viewedBy: [],
+    version: `${document.currentVersionNumber}.0`, barcode: document.barcodes?.[0]?.barcodeValue ?? "Not generated", recipients: [], viewedBy: [],
     mimeType: version?.detectedMimeType, isLive: true, documentType: document.documentType?.name,
     metadata: document.metadataValues.map((item) => ({ label: item.field.label, value: item.shortTextValue ?? item.longTextValue ?? item.selectedOptionValue ?? (item.dateValue ? new Date(item.dateValue).toLocaleDateString() : "") })), ownerUserId: document.ownerUserId, folderId: document.folderId, canMove: document.canMove, canArchive: document.canArchive, canRestore: document.canRestore, canStartWorkflow: document.canStartWorkflow, archivedAt: document.archivedAt,
   };
@@ -81,6 +84,8 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
   const [setSailTarget, setSetSailTarget] = useState<MockDocument | null>(null);
   const [archivedDocuments, setArchivedDocuments] = useState<MockDocument[]>([]);
   const [archivedFolders, setArchivedFolders] = useState<Folder[]>([]);
+  const [barcodeTarget, setBarcodeTarget] = useState<Pick<MockDocument, "id" | "title"> | null>(null);
+  const [barcodeRevision, setBarcodeRevision] = useState(0);
 
   const refreshSequence = useRef(0);
   const refreshWorkspace = useCallback(async (signal?: AbortSignal): Promise<void> => {
@@ -117,9 +122,19 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
   useEffect(() => subscribeToWorkspaceChanges(() => { setRealtimeRevision((current) => current + 1); void refreshWorkspace().catch(() => undefined); }, () => {
     ++refreshSequence.current;
     setSelectedDocument(null); setDocuments([]); setRoutes([]); setArchivedDocuments([]); setDocumentTypes([]);
-    setAccessResource(null); setMoveTarget(null); setLifecycleTarget(null); setSetSailTarget(null);
+    setAccessResource(null); setMoveTarget(null); setLifecycleTarget(null); setSetSailTarget(null); setBarcodeTarget(null);
+    setBarcodeRevision((value) => value + 1);
   }), [refreshWorkspace]);
   useEffect(() => { if (!notice) return; const timeout = window.setTimeout(() => setNotice(null), 4200); return () => window.clearTimeout(timeout); }, [notice]);
+
+  useEffect(() => {
+    if (activeView !== "routes") return;
+    const controller = new AbortController();
+    const timer = window.setInterval(() => { void refreshWorkspace(controller.signal).catch(() => {
+      if (!controller.signal.aborted) { setRoutes([]); setNotice("Route deadlines could not be refreshed. Reload to try again."); }
+    }); }, 60_000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [activeView, refreshWorkspace]);
 
   function navigate(view: WorkspaceView): void { setActiveView(view); setSelectedDocument(null); }
   function openDocument(document: MockDocument): void { setSelectedDocument(document); }
@@ -157,6 +172,15 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
   }
 
   function showDemoAction(action: string): void { setNotice(`${action} selected.`); }
+  async function handleDocumentAction(action: string, document: MockDocument): Promise<void> {
+    if (action === "Barcode") { setBarcodeTarget(document); return; }
+    if (action === "Print") {
+      try { printBlob(await printDocument(document.id)); setNotice("The audited browser print view is opening."); }
+      catch (error) { setNotice(error instanceof Error ? error.message : "Document printing is unavailable."); }
+      return;
+    }
+    showDemoAction(action);
+  }
   const canShareDocument = (document: MockDocument) => Boolean(document.isLive && document.section === "Private" && document.ownerUserId === currentUser.id && currentUser.permissions.includes("documents.share"));
   const canShareFolder = (folder: Folder) => Boolean(folder.isLive && folder.section === "Private" && folder.ownerUserId === currentUser.id && currentUser.permissions.includes("folders.share"));
 
@@ -166,6 +190,7 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
       case "home": return <HomeView documents={documents.filter((document) => !document.folderId)} folders={folders.filter((folder) => !folder.parentId)} routeDocuments={routes.map((route) => mapDocument(route.document, new Map(route.document.folder ? [[route.document.folder.id, route.document.folder.name]] : [])))} routes={routes} onCreateRecord={() => setIsRecordDialogOpen(true)} onOpenDocument={openDocument} onShowRoutes={() => navigate("routes")} />;
       case "sections": return <SectionsView activeSection={activeSection} canManageFolderAccess={canShareFolder} currentFolderId={currentFolderId} documents={documents} folders={folders} onArchiveDocument={(document) => setLifecycleTarget({ id: document.id, kind: "document", name: document.title, action: "archive" })} onArchiveFolder={(folder) => setLifecycleTarget({ id: folder.id, kind: "folder", name: folder.name, action: "archive" })} onLocationChange={selectLocation} onManageFolderAccess={(folder) => setAccessResource({ id: folder.id, kind: "folders", name: folder.name })} onMoveDocument={(document) => setMoveTarget({ id: document.id, kind: "document", name: document.title, section: document.section, currentFolderId: document.folderId ?? null })} onMoveFolder={(folder) => setMoveTarget({ id: folder.id, kind: "folder", name: folder.name, section: folder.section, currentFolderId: folder.parentId ?? null })} onOpenDocument={openDocument} />;
       case "routes": return <RoutesView routes={routes} onOpenDocument={(document) => openDocument(mapDocument(document, new Map(document.folder ? [[document.folder.id, document.folder.name]] : [])))} onSignOut={onSignOut} />;
+      case "barcodes": return <BarcodeManagerView key={`${realtimeRevision}:${barcodeRevision}`} onManage={(documentId, documentTitle) => setBarcodeTarget({ id: documentId, title: documentTitle })} />;
       case "archives":
       case "trash": return <LifecycleView documents={archivedDocuments} folders={archivedFolders} onRestoreDocument={(document) => setLifecycleTarget({ id: document.id, kind: "document", name: document.title, action: "restore" })} onRestoreFolder={(folder) => setLifecycleTarget({ id: folder.id, kind: "folder", name: folder.name, action: "restore" })} view={activeView} />;
     }
@@ -175,13 +200,14 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
     <div className="flex min-h-screen flex-col bg-slate-50/70 text-slate-950 lg:flex-row" data-workspace>
       <WorkspaceSidebar activeView={activeView} documents={documents} onCreateRecord={() => setIsRecordDialogOpen(true)} onCreateSection={() => setIsSectionDialogOpen(true)} onNavigate={navigate} onOpenDocument={openDocument} />
       <div className="flex min-w-0 flex-1 flex-col"><WorkspaceTopNav activeView={activeView} currentUser={currentUser} onNavigate={navigate} onShowSearch={() => setSelectedDocument(null)} onSignOut={onSignOut} /><main className="min-w-0 flex-1 overflow-x-hidden">{renderWorkspace()}</main></div>
-      <section className="min-h-96 w-full border-t border-slate-200/90 bg-slate-50/60 lg:w-[26rem] lg:shrink-0 lg:border-t-0 lg:border-l xl:w-[29rem]">{selectedDocument ? <DocumentPreview document={selectedDocument} onAction={showDemoAction} onSetSail={selectedDocument.canStartWorkflow ? () => setSetSailTarget(selectedDocument) : undefined} /> : <SearchPanel documents={documents} onOpenDocument={openDocument} />}</section>
+      <section className="min-h-96 w-full border-t border-slate-200/90 bg-slate-50/60 lg:w-[26rem] lg:shrink-0 lg:border-t-0 lg:border-l xl:w-[29rem]">{selectedDocument ? <DocumentPreview canPrintDocument={currentUser.permissions.includes("documents.print")} canUseBarcode={["barcodes.generate", "barcodes.print", "barcodes.reprint"].some((permission) => currentUser.permissions.includes(permission))} document={selectedDocument} onAction={(action) => void handleDocumentAction(action, selectedDocument)} onSetSail={selectedDocument.canStartWorkflow ? () => setSetSailTarget(selectedDocument) : undefined} /> : <SearchPanel documents={documents} onOpenDocument={openDocument} />}</section>
       <CreateRecordDialog documentTypes={documentTypes} onCreate={createDocument} onOpenChange={setIsRecordDialogOpen} open={isRecordDialogOpen} />
       <CreateSectionDialog defaultSection={activeSection} onCreate={createSection} onOpenChange={setIsSectionDialogOpen} open={isSectionDialogOpen} parentName={currentFolderId ? folders.find((folder) => folder.id === currentFolderId)?.name : undefined} />
       <AccessGrantsDialog key={accessResource ? `access:${accessResource.kind}:${accessResource.id}` : "access-closed"} onChanged={() => refreshWorkspace()} onClose={() => setAccessResource(null)} resource={accessResource} />
       <MoveResourceDialog folders={folders} key={moveTarget ? `move:${moveTarget.kind}:${moveTarget.id}` : "move-closed"} onClose={() => setMoveTarget(null)} onMove={moveResource} target={moveTarget} />
       <LifecycleActionDialog key={lifecycleTarget ? `lifecycle:${lifecycleTarget.action}:${lifecycleTarget.kind}:${lifecycleTarget.id}` : "lifecycle-closed"} onClose={() => setLifecycleTarget(null)} onConfirm={applyLifecycle} target={lifecycleTarget} />
       <SetSailDialog key={setSailTarget ? `set-sail:${setSailTarget.id}` : "set-sail-closed"} onClose={() => setSetSailTarget(null)} onSignOut={onSignOut} onStarted={(message) => { setNotice(message); setRealtimeRevision((current) => current + 1); void refreshWorkspace().catch(() => undefined); }} target={setSailTarget ? { id: setSailTarget.id, title: setSailTarget.title, subject: setSailTarget.subject } : null} />
+      {barcodeTarget ? <BarcodeDialog key={barcodeTarget.id} canGenerate={currentUser.permissions.includes("barcodes.generate")} canPrint={currentUser.permissions.includes("barcodes.print")} canReprint={currentUser.permissions.includes("barcodes.reprint")} documentId={barcodeTarget.id} documentTitle={barcodeTarget.title} onChanged={async () => { setBarcodeRevision((value) => value + 1); await refreshWorkspace(); }} onClose={() => setBarcodeTarget(null)} onNotice={setNotice} /> : null}
       <DemoNotice message={notice} onDismiss={() => setNotice(null)} />
     </div>
   );

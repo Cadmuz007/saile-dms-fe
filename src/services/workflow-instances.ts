@@ -41,9 +41,14 @@ export function getWorkflowInstance(instanceId: string, signal?: AbortSignal) {
 }
 
 export function submitWorkflowDecision(instanceId: string, input: { taskId: string; decision: "APPROVED" | "REJECTED"; reason: string | null; destinationFolderId?: string | null; assigneeUserId?: string }) {
-  return request<{ id: string; documentId: string; status: "ACTIVE" | "CANCELLED" | "COMPLETED" | "ERROR" }>(`/workflows/${encodeURIComponent(instanceId)}/decisions`, { method: "POST", body: JSON.stringify(input) });
+  return request<{ id: string; documentId: string; duplicateDocumentId?: string | null; status: "ACTIVE" | "CANCELLED" | "COMPLETED" | "ERROR" }>(`/workflows/${encodeURIComponent(instanceId)}/decisions`, { method: "POST", body: JSON.stringify(input) });
 }
 
 export function retryWorkflowConversion(instanceId: string) {
   return request<{ id: string; documentId: string; status: "COMPLETED" | "ERROR" }>(`/workflows/${encodeURIComponent(instanceId)}/retry-conversion`, { method: "POST", body: "{}" });
+}
+
+export function markWorkflowForReview(instanceId: string, taskId: string) {
+  return request<{ id: string; taskId: string; reviewStartedAt: string; reviewDueAt: string | null }>(
+    `/workflows/${encodeURIComponent(instanceId)}/tasks/${encodeURIComponent(taskId)}/review`, { method: "POST", body: "{}" });
 }

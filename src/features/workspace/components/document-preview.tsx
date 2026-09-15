@@ -13,6 +13,8 @@ interface DocumentPreviewProps {
   document: MockDocument;
   onAction: (action: string) => void;
   onSetSail?: () => void;
+  canPrintDocument: boolean;
+  canUseBarcode: boolean;
 }
 
 const statusTone: Record<RouteStatus, "amber" | "blue" | "green" | "red"> = {
@@ -29,7 +31,7 @@ const actionItems = [
   { label: "Barcode", icon: Barcode },
 ];
 
-export function DocumentPreview({ document, onAction, onSetSail }: DocumentPreviewProps) {
+export function DocumentPreview({ document, onAction, onSetSail, canPrintDocument, canUseBarcode }: DocumentPreviewProps) {
   const canPreview = document.mimeType === "application/pdf" || document.mimeType?.startsWith("image/") === true;
   const [preview, setPreview] = useState<{ documentId: string; url?: string; error?: string } | null>(null);
   const previewUrl = preview?.documentId === document.id ? preview.url : undefined;
@@ -61,7 +63,7 @@ export function DocumentPreview({ document, onAction, onSetSail }: DocumentPrevi
       </section>
 
       <section className="grid grid-cols-4 gap-2" aria-label="Document quick actions">
-        {actionItems.filter((item) => item.label !== "Set Sail" || onSetSail).map((item) => { const Icon = item.icon; const liveSetSail = item.label === "Set Sail" && onSetSail; return <button className="grid min-h-16 place-items-center gap-1 rounded-2xl border border-slate-200 bg-white p-2 text-[10px] font-semibold text-slate-500 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" key={item.label} onClick={() => liveSetSail ? onSetSail() : onAction(item.label)} title={liveSetSail ? "Start a published Set Sail workflow" : `${item.label} is a presentation action`} type="button"><Icon aria-hidden="true" size={18} />{item.label}</button>; })}
+        {actionItems.filter((item) => (item.label !== "Set Sail" || onSetSail) && (item.label !== "Print" || canPrintDocument) && (item.label !== "Barcode" || canUseBarcode)).map((item) => { const Icon = item.icon; const liveSetSail = item.label === "Set Sail" && onSetSail; return <button className="grid min-h-16 place-items-center gap-1 rounded-2xl border border-slate-200 bg-white p-2 text-[10px] font-semibold text-slate-500 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" key={item.label} onClick={() => liveSetSail ? onSetSail() : onAction(item.label)} title={liveSetSail ? "Start a published Set Sail workflow" : item.label} type="button"><Icon aria-hidden="true" size={18} />{item.label}</button>; })}
       </section>
     </aside>
   );

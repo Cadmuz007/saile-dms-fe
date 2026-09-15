@@ -21,7 +21,8 @@ import { MetricCard, PageHeader, StatusChip } from "./admin-page-primitives";
 import { SetSailAiPage } from "./set-sail-ai-page";
 import { SetSailPage } from "./set-sail-page";
 import { DocumentTypesPage } from "./document-types-page";
-import { PoliciesPage, SlaPage } from "./governance-management";
+import { PoliciesPage } from "./governance-management";
+import { SlaPage } from "./sla-page";
 import { SaileAdminTable } from "./saile-admin-table";
 
 import { UsersPage } from "./users-page";
@@ -59,7 +60,7 @@ export function AdminContent({ activeView, currentUser, onSignOut, onLicenseMetr
   if (activeView === "groups") return <Box component="main" sx={mainSx}><GroupsPage currentUser={currentUser} onSignOut={onSignOut} /></Box>;
   if (activeView === "permissions") return <Box component="main" sx={mainSx}><PermissionsPage currentUser={currentUser} onSignOut={onSignOut} /></Box>;
   if (activeView === "policies") return <Box component="main" sx={mainSx}><PoliciesPage /></Box>;
-  if (activeView === "sla") return <Box component="main" sx={mainSx}><SlaPage /></Box>;
+  if (activeView === "sla") return <Box component="main" sx={mainSx}><SlaPage currentUser={currentUser} onSignOut={onSignOut} /></Box>;
   if (activeView === "document-types") return <Box component="main" sx={mainSx}><DocumentTypesPage currentUser={currentUser} onSignOut={onSignOut} /></Box>;
   if (activeView === "set-sail") return <Box component="main" sx={mainSx}><SetSailPage currentUser={currentUser} onSignOut={onSignOut} /></Box>;
   return <Box component="main" sx={mainSx}><SetSailAiPage /></Box>;

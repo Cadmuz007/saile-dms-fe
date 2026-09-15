@@ -83,9 +83,9 @@ const documentTransforms: Array<{ value: WorkflowDocumentTransform; label: strin
 const blankStage = (position: number): WorkflowStageInput => ({
   name: `Stage ${position + 1}`,
   decisionRule: "ANY",
-  approvedAction: "NEXT_STAGE",
-  rejectedAction: "PREVIOUS_STAGE",
-  documentTransform: null,
+  approvedAction: "APPROVE_DOCUMENT",
+  rejectedAction: position === 0 ? "CANCEL_DOCUMENT" : "PREVIOUS_STAGE",
+  documentTransform: "MOVE_DOCUMENT",
   recipients: [],
 });
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "The request could not be completed.";
@@ -202,7 +202,8 @@ function WorkflowTemplateForm({ template, onClose, onSaved, onSignOut }: {
     && stages.every((stage, index) => stage.name.trim().length > 0
       && stage.recipients.length > 0
       && (stage.approvedAction !== "APPROVE_DOCUMENT" || (index === stages.length - 1 && Boolean(stage.documentTransform)))
-      && (index !== stages.length - 1 || stage.approvedAction !== "NEXT_STAGE"));
+      && (index !== 0 || stage.rejectedAction !== "PREVIOUS_STAGE")
+      && (index !== stages.length - 1 || (stage.approvedAction !== "NEXT_STAGE" && stage.approvedAction !== "LAST_STAGE")));
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -232,7 +233,7 @@ function WorkflowTemplateForm({ template, onClose, onSaved, onSignOut }: {
       <DialogContent><Stack spacing={2.5} sx={{ pt: 1 }}>
         {error && <Alert severity="error">{error}</Alert>}
         {candidateError && <Alert severity="error">{candidateError}</Alert>}
-        <Alert severity="info">Save the draft before publishing it. Publishing creates an immutable configuration; workflow actions remain disabled while the remaining runtime parameters are finalized.</Alert>
+        <Alert severity="info">Save the draft before publishing it. Publishing creates an immutable configuration used by live workflow execution.</Alert>
         <TextField autoFocus required fullWidth label="Name of Set Sail" value={name} disabled={saving} slotProps={{ htmlInput: { maxLength: 160 } }} onChange={(event) => setName(event.target.value)} />
         <TextField fullWidth multiline minRows={2} label="Description" value={description} disabled={saving} slotProps={{ htmlInput: { maxLength: 1000 } }} onChange={(event) => setDescription(event.target.value)} />
         <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}>
@@ -268,11 +269,11 @@ function WorkflowTemplateForm({ template, onClose, onSaved, onSignOut }: {
               <MenuItem value="ANY">OR — one recipient decides</MenuItem>
               <MenuItem value="ALL">AND — all recipients decide</MenuItem>
             </TextField>
-            <TextField select label="Condition if approved" value={stage.approvedAction} disabled={saving} error={(index === stages.length - 1 && stage.approvedAction === "NEXT_STAGE") || (index !== stages.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT")} helperText={index === stages.length - 1 && stage.approvedAction === "NEXT_STAGE" ? "The final stage cannot move to the next level." : index !== stages.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT" ? "Approve the document is available only on the final stage." : undefined} onChange={(event) => { const approvedAction = event.target.value as WorkflowApprovedAction; updateStage(index, { approvedAction, documentTransform: approvedAction === "APPROVE_DOCUMENT" ? stage.documentTransform : null }); }}>
-              {approvedActions.map((action) => <MenuItem disabled={(index === stages.length - 1 && action.value === "NEXT_STAGE") || (index !== stages.length - 1 && action.value === "APPROVE_DOCUMENT")} key={action.value} value={action.value}>{action.label}</MenuItem>)}
+            <TextField select label="Condition if approved" value={stage.approvedAction} disabled={saving} error={(index === stages.length - 1 && (stage.approvedAction === "NEXT_STAGE" || stage.approvedAction === "LAST_STAGE")) || (index !== stages.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT")} helperText={index === stages.length - 1 && stage.approvedAction === "NEXT_STAGE" ? "The final stage cannot move to the next level." : index === stages.length - 1 && stage.approvedAction === "LAST_STAGE" ? "The final stage cannot move to itself as the last level." : index !== stages.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT" ? "Approve the document is available only on the final stage." : undefined} onChange={(event) => { const approvedAction = event.target.value as WorkflowApprovedAction; updateStage(index, { approvedAction, documentTransform: approvedAction === "APPROVE_DOCUMENT" ? stage.documentTransform : null }); }}>
+              {approvedActions.map((action) => <MenuItem disabled={(index === stages.length - 1 && (action.value === "NEXT_STAGE" || action.value === "LAST_STAGE")) || (index !== stages.length - 1 && action.value === "APPROVE_DOCUMENT")} key={action.value} value={action.value}>{action.label}</MenuItem>)}
             </TextField>
-            <TextField select label="Condition if rejected" value={stage.rejectedAction} disabled={saving} onChange={(event) => updateStage(index, { rejectedAction: event.target.value as WorkflowRejectedAction })}>
-              {rejectedActions.map((action) => <MenuItem key={action.value} value={action.value}>{action.label}</MenuItem>)}
+            <TextField select label="Condition if rejected" value={stage.rejectedAction} disabled={saving} error={index === 0 && stage.rejectedAction === "PREVIOUS_STAGE"} helperText={index === 0 && stage.rejectedAction === "PREVIOUS_STAGE" ? "The first stage has no previous level." : undefined} onChange={(event) => updateStage(index, { rejectedAction: event.target.value as WorkflowRejectedAction })}>
+              {rejectedActions.map((action) => <MenuItem disabled={index === 0 && action.value === "PREVIOUS_STAGE"} key={action.value} value={action.value}>{action.label}</MenuItem>)}
             </TextField>
           </Box>
           {index === stages.length - 1 && stage.approvedAction === "APPROVE_DOCUMENT" ? <TextField required select fullWidth label="Transform Document" value={stage.documentTransform ?? ""} disabled={saving} onChange={(event) => updateStage(index, { documentTransform: event.target.value as WorkflowDocumentTransform })}>

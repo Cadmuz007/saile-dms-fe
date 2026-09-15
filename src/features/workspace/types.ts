@@ -1,4 +1,4 @@
-export type WorkspaceView = "home" | "sections" | "routes" | "archives" | "trash";
+export type WorkspaceView = "home" | "sections" | "routes" | "barcodes" | "archives" | "trash";
 
 export type LibrarySection = "Home" | "Private" | "Public";
 export type RouteStatus = "Pending" | "Review" | "Completed" | "Setback";

@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { getWorkflowInstance, retryWorkflowConversion, submitWorkflowDecision, WorkflowInstancesRequestError } from "@/services/workflow-instances";
+import { getWorkflowInstance, markWorkflowForReview, retryWorkflowConversion, submitWorkflowDecision, WorkflowInstancesRequestError } from "@/services/workflow-instances";
+import { TaskSlaLabel } from "./task-sla-label";
 
 import type { WorkflowInstanceDetail, WorkflowRoute } from "../workflow.types";
 
@@ -61,7 +62,7 @@ export function WorkflowHistoryPanel({ route, onOpenDocument, onSignOut }: Workf
       const result = await submitWorkflowDecision(route.id, { taskId: detail.availableDecision.taskId, decision, reason: reason || null,
         ...(decision === "APPROVED" && detail.availableDecision.requiresMove ? { destinationFolderId: destination === "root" ? null : destination } : {}),
         ...(decision === "APPROVED" && detail.availableDecision.requiresAssign ? { assigneeUserId: assignee } : {}) });
-      setNotice(result.status === "ERROR" ? `PDF conversion failed. The original document is preserved${detail.availableDecision.requiresMove ? " and was not moved" : ""}; the workflow is in an error state.` : result.status === "COMPLETED" ? `${detail.availableDecision.requiresAssign ? "PDF version created and view access assigned" : detail.availableDecision.requiresPdf && detail.availableDecision.requiresMove ? "PDF version created and document moved" : detail.availableDecision.requiresPdf ? "PDF version created" : "Document moved"}; workflow completed. Your decision is retained in workflow history.` : `${decision === "APPROVED" ? "Approval" : "Rejection"} recorded. Your decision is retained in workflow history.`);
+      setNotice(result.status === "ERROR" ? `PDF conversion failed. The original document is preserved${detail.availableDecision.requiresMove ? " and was not moved" : ""}; the workflow is in an error state.` : result.status === "COMPLETED" ? `${detail.availableDecision.requiresDuplicate ? "An independent copy was created and moved; the original is unchanged" : detail.availableDecision.requiresAssign ? "PDF version created and view access assigned" : detail.availableDecision.requiresPdf && detail.availableDecision.requiresMove ? "PDF version created and document moved" : detail.availableDecision.requiresPdf ? "PDF version created" : "Document moved"}; workflow completed. Your decision is retained in workflow history.` : `${decision === "APPROVED" ? "Approval" : "Rejection"} recorded. Your decision is retained in workflow history.`);
       setDetail(null);
       setReason("");
       // The actor's task may no longer confer read access after a successful response.
@@ -89,6 +90,24 @@ export function WorkflowHistoryPanel({ route, onOpenDocument, onSignOut }: Workf
     }
   }
 
+  async function markForReview() {
+    if (!detail?.availableReview || saving) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await markWorkflowForReview(route.id, detail.availableReview.taskId);
+      setNotice(result.reviewDueAt ? "Marked For Review. Your review deadline is now running." : "Marked For Review. This pre-rollout task remains SLA untracked.");
+      setDetail(null);
+      setRevision((value) => value + 1);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not mark this task For Review.");
+      if (requestError instanceof WorkflowInstancesRequestError && requestError.status === 401) onSignOut();
+      setDetail(null);
+      setRevision((value) => value + 1);
+    } finally { setSaving(false); }
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     getWorkflowInstance(route.id, controller.signal).then((result) => {
@@ -101,6 +120,11 @@ export function WorkflowHistoryPanel({ route, onOpenDocument, onSignOut }: Workf
     });
     return () => controller.abort();
   }, [onSignOut, route, revision]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (!saving) setRevision((value) => value + 1); }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [saving]);
 
   return (
     <section aria-labelledby="workflow-history-heading" className="grid gap-5 rounded-2xl border border-violet-200 bg-white p-5 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.55)] sm:p-6">
@@ -129,21 +153,25 @@ export function WorkflowHistoryPanel({ route, onOpenDocument, onSignOut }: Workf
               <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="grid size-7 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">{stage.position + 1}</span><h3 className="font-bold text-slate-900">{stage.name} · Attempt {stage.attempt}</h3></div><Badge tone={stageTone[stage.status]}>{stage.status === "ACTIVE" ? "Active" : stage.status.charAt(0) + stage.status.slice(1).toLowerCase()}</Badge></div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500"><span>{stage.decisionRule === "ALL" ? "All recipients required" : "Any recipient may complete"}</span><span>Opened: {formatWhen(stage.openedAt)}</span></div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {stage.tasks.map((task) => <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2" key={task.id}><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800">{personName(task.assignedUser)}</p><p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400"><Clock3 aria-hidden="true" size={12} />{formatWhen(task.receivedAt)}</p></div><Badge tone={taskTone[task.status]}>{task.status.charAt(0) + task.status.slice(1).toLowerCase()}</Badge></div>)}
+                {stage.tasks.map((task) => <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2" key={task.id}><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800">{personName(task.assignedUser)}</p><p className="mt-0.5 flex items-center gap-1 text-xs text-slate-400"><Clock3 aria-hidden="true" size={12} />{formatWhen(task.receivedAt)}</p><TaskSlaLabel task={task} /></div><Badge tone={taskTone[task.status]}>{task.status === "PENDING" && task.reviewStartedAt ? "For Review" : task.status.charAt(0) + task.status.slice(1).toLowerCase()}</Badge></div>)}
               </div>
               <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500"><CheckCircle2 aria-hidden="true" className="text-emerald-600" size={14} />Approve: {stage.approvedAction.replaceAll("_", " ").toLowerCase()}<ArrowRight aria-hidden="true" size={13} /><XCircle aria-hidden="true" className="text-rose-600" size={14} />Reject: {stage.rejectedAction.replaceAll("_", " ").toLowerCase()}</div>
               {stage.documentTransform ? <p className="text-xs text-slate-500">Transform: {transformLabels[stage.documentTransform]}</p> : null}
             </article>
           ))}
         </div>
+        {detail.availableReview ? <div className="grid gap-2 rounded-xl border border-slate-200 p-4">
+          <p className="text-sm text-slate-600">Opening a document does not count as a response. Mark For Review when you begin reviewing; you can also approve or reject directly.</p>
+          <Button variant="secondary" disabled={saving} onClick={() => void markForReview()}>For Review</Button>
+        </div> : null}
         {detail.availableDecision ? <div className="grid gap-3 rounded-xl border border-violet-200 p-4">
           {detail.availableDecision.requiresMove && detail.availableDecision.moveDestinations ? <>
-            <label className="text-sm font-semibold" htmlFor="workflow-move-destination">Move document to</label>
+            <label className="text-sm font-semibold" htmlFor="workflow-move-destination">{detail.availableDecision.requiresDuplicate ? "Move copied document to" : "Move document to"}</label>
             <NativeSelect id="workflow-move-destination" disabled={saving} value={destination} onChange={(event) => setDestination(event.target.value)}>
               <NativeSelectOption value="">Select a destination folder</NativeSelectOption>
               {detail.availableDecision.moveDestinations.map((folder) => <NativeSelectOption key={folder.id ?? "root"} value={folder.id ?? "root"}>{folder.name}</NativeSelectOption>)}
             </NativeSelect>
-            <p className="text-xs text-slate-500">Final approval moves this document to the selected location{detail.availableDecision.requiresPdf ? " only after the new PDF version is created and scanned" : ""}. Inherited folder access may change.</p>
+            <p className="text-xs text-slate-500">{detail.availableDecision.requiresDuplicate ? "Final approval creates a new independent document titled with “(Copy)”, retaining the current owner and copying current primary and active attachment versions, document type, metadata, classification, subject, and description. Access grants and history are not copied; the original remains unchanged." : <>Final approval moves this document to the selected location{detail.availableDecision.requiresPdf ? " only after the new PDF version is created and scanned" : ""}. Inherited folder access may change.</>}</p>
           </> : null}
           {detail.availableDecision.requiresAssign && detail.availableDecision.assignCandidates ? <>
             <label className="text-sm font-semibold" htmlFor="workflow-assign-user">Assign PDF access to</label>
@@ -165,6 +193,7 @@ export function WorkflowHistoryPanel({ route, onOpenDocument, onSignOut }: Workf
           <p className="font-semibold">{event.action} · {personName(event.actor)}</p><p className="text-xs text-slate-500">{formatWhen(event.occurredAt)}</p>
           {event.decision?.transformStatus ? <p>PDF conversion: {event.decision.transformStatus === "ERROR" ? "Failed — original preserved" : "Completed"}</p> : null}
           {event.decision?.moveStatus ? <p>Document move: {event.decision.moveStatus === "COMPLETED" ? "Completed" : "Pending PDF recovery"}</p> : null}
+          {event.decision?.duplicateDocumentId ? <p>Created copy {event.decision.duplicateDocumentId} with {event.decision.copiedAttachmentCount ?? 0} active attachment{event.decision.copiedAttachmentCount === 1 ? "" : "s"}</p> : null}
           {event.decision?.assigneeUserId ? <p>Assigned view access to user {event.decision.assigneeUserId}</p> : null}
           {event.retry ? <p>PDF recovery: {event.retry.transformStatus === "ERROR" ? `Failed again from version ${event.retry.sourceVersionNumber} — original preserved${event.retry.moveStatus ? ", move still pending" : ""}` : `Completed from version ${event.retry.sourceVersionNumber} as version ${event.retry.outputVersionNumber}${event.retry.moveStatus ? ", document moved" : ""}`}</p> : null}
           {event.decision ? <><p>{event.decision.stageName} · Attempt {event.decision.attempt} · Document version {event.decision.documentVersionNumber}</p><p>{event.decision.resolved ? `Stage resolved: ${event.decision.selectedAction.replaceAll("_", " ").toLowerCase()}` : "Waiting for remaining recipients"}</p>{event.decision.reason ? <p className="whitespace-pre-wrap">Reason: {event.decision.reason}</p> : null}</> : null}

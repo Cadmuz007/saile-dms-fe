@@ -1,4 +1,4 @@
-import { Archive, Bell, ChevronDown, FolderOpen, HardDrive, Home, LogOut, Route, Search, Trash2 } from "lucide-react";
+import { Archive, Barcode, Bell, ChevronDown, FolderOpen, HardDrive, Home, LogOut, Route, Search, Trash2 } from "lucide-react";
 
 import type { AuthenticatedUser } from "@/features/auth/types";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ const navItems = [
   { view: "home", label: "Home", icon: Home },
   { view: "sections", label: "Sections", icon: FolderOpen },
   { view: "routes", label: "Routes", icon: Route },
+  { view: "barcodes", label: "Barcodes", icon: Barcode },
   { view: "archives", label: "Archives", icon: Archive },
   { view: "trash", label: "Trash bin", icon: Trash2 },
 ] as const;

@@ -8,6 +8,7 @@ import type { ApiDocument } from "@/services/documents";
 
 import type { WorkflowRoute, WorkflowRouteDirection } from "../workflow.types";
 import { WorkflowHistoryPanel } from "./workflow-history-panel";
+import { TaskSlaLabel } from "./task-sla-label";
 
 interface RoutesViewProps {
   routes: WorkflowRoute[];
@@ -57,7 +58,7 @@ export function RoutesView({ routes, onOpenDocument, onSignOut }: RoutesViewProp
             <button aria-pressed={selectedRouteId === route.id} className="grid w-full gap-3 px-5 py-4 text-left transition hover:bg-violet-50/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-violet-700 aria-pressed:bg-violet-50 xl:grid-cols-[minmax(15rem,1.7fr)_0.75fr_0.65fr_minmax(10rem,1fr)_minmax(9rem,1fr)] xl:items-center xl:gap-4" key={`${route.direction}:${route.id}`} onClick={() => setSelectedRouteId(route.id)} type="button">
               <span className="grid gap-1"><span className="font-semibold text-slate-900">{route.document.title}</span><span className="flex items-center gap-1 text-xs text-slate-500">{route.direction === "INBOUND" ? `${route.startedBy.firstName} ${route.startedBy.lastName}` : "You"}<ArrowRight aria-hidden="true" size={13} />{route.currentStage?.name ?? (route.status === "ERROR" ? "Needs attention" : "Complete")}</span></span>
               <span className="text-sm text-slate-600">{route.template.name} <span className="text-xs text-slate-400">r{route.templateRevision}</span></span>
-              <span><Badge tone={statusTone[route.status]}>{route.status === "ACTIVE" ? "In progress" : route.status === "COMPLETED" ? "Completed" : route.status === "ERROR" ? "Conversion error" : "Cancelled"}</Badge></span>
+              <span><Badge tone={statusTone[route.status]}>{route.status === "ACTIVE" ? "In progress" : route.status === "COMPLETED" ? "Completed" : route.status === "ERROR" ? "Conversion error" : "Cancelled"}</Badge>{route.direction === "INBOUND" && route.currentStage?.tasks[0] ? <TaskSlaLabel task={route.currentStage.tasks[0]} /> : route.currentStage?.tasks.some((task) => task.sla?.overdue) ? <span className="block text-xs font-semibold text-rose-700">Overdue recipient response</span> : null}</span>
               <span className="flex items-center gap-1 text-sm text-slate-600"><Clock3 aria-hidden="true" className="text-slate-400" size={15} />{formatWhen(route.direction === "INBOUND" ? route.currentStage?.tasks[0]?.receivedAt ?? null : route.startedAt)}</span>
               <span className="flex items-center gap-1 text-sm text-slate-500"><Eye aria-hidden="true" className="text-slate-400" size={15} />{route.currentStage ? `${route.currentStage.position + 1} of ${route.currentStage.stageCount}` : route.status === "ERROR" ? "Needs attention" : "Finished"}</span>
             </button>

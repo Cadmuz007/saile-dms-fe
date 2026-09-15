@@ -18,7 +18,14 @@ export interface ApiDocument {
     field: { id: string; label: string; kind: "SHORT_TEXT" | "LONG_TEXT" | "DATE" | "SINGLE_SELECT"; position: number };
   }>;
   versions: Array<{ originalFilename: string; detectedMimeType: string; byteSize: number; uploadedAt: string; uploadedBy: { firstName: string; lastName: string } }>;
+  barcodes: Array<{ id: string; barcodeValue: string; revision: number; generatedAt: string }>;
 }
+export interface ApiBarcodeActor { id: string; firstName: string; lastName: string; }
+export interface ApiBarcodePrintEvent { id: string; actionType: "PRINT_BARCODE" | "REPRINT_BARCODE"; copies: number; occurredAt: string; performedBy: ApiBarcodeActor; }
+export interface ApiBarcode { id: string; barcodeValue: string; symbology: string; titleSnapshot: string; revision: number; isCurrent?: boolean; generatedAt: string; retiredAt?: string | null; generatedBy?: ApiBarcodeActor; printEvents?: ApiBarcodePrintEvent[]; }
+export interface ApiBarcodeOverview { id: string; title: string; barcodes: ApiBarcode[]; printEvents: (Omit<ApiBarcodePrintEvent, "actionType"> & { actionType: "PRINT_DOCUMENT"; documentVersion: number | null })[]; }
+export interface ApiBarcodePrintReceipt { document: { id: string; title: string }; barcode: ApiBarcode; event: ApiBarcodePrintEvent; }
+export interface ApiBarcodeManagerRow { id: string; title: string; area: ApiLibraryArea; folder: { id: string; name: string } | null; owner: ApiBarcodeActor; barcodes: ApiBarcode[]; }
 export type ApiAccessLevel = "READ" | "EDIT";
 export type ApiAccessTargetType = "USER" | "GROUP";
 export interface ApiAccessGrant {
@@ -42,6 +49,27 @@ export interface ApiVersionOverview {
   currentVersionNumber: number;
   canUploadVersion: boolean;
   versions: ApiDocumentVersion[];
+}
+export interface ApiDocumentHistoryItem {
+  id: string;
+  source: "DOCUMENT" | "ATTACHMENT" | "WORKFLOW";
+  action: string;
+  occurredAt: string;
+  actor: { id: string; firstName: string; lastName: string };
+  versionNumber: number | null;
+  reason: string | null;
+  attachment: { id: string; name: string } | null;
+  workflow: { id: string; subject: string } | null;
+  stageName: string | null;
+  attempt: number | null;
+  documentTransform: string | null;
+  fromStatus: string | null;
+  toStatus: string | null;
+}
+export interface ApiDocumentHistory {
+  document: { id: string; title: string; status: "ACTIVE" | "ARCHIVED"; currentVersionNumber: number };
+  items: ApiDocumentHistoryItem[];
+  meta: { page: number; pageSize: number; total: number; totalPages: number };
 }
 export interface ApiArchiveOverview { folders: ApiFolder[]; documents: ApiDocument[]; }
 
@@ -86,10 +114,27 @@ export function getResourceAccess(kind: AccessResourceKind, resourceId: string) 
 export function grantResourceAccess(kind: AccessResourceKind, resourceId: string, input: { targetType: ApiAccessTargetType; targetId: string; accessLevel: ApiAccessLevel }) { return request<ApiAccessGrant>(`/${kind}/${encodeURIComponent(resourceId)}/access-grants`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }); }
 export function revokeResourceAccess(kind: AccessResourceKind, resourceId: string, grantId: string) { return request<ApiAccessGrant>(`/${kind}/${encodeURIComponent(resourceId)}/access-grants/${encodeURIComponent(grantId)}/revoke`, { method: "POST" }); }
 export function listDocumentVersions(documentId: string) { return request<ApiVersionOverview>(`/documents/${encodeURIComponent(documentId)}/versions`); }
+export function getDocumentHistory(documentId: string, page = 1, signal?: AbortSignal) {
+  return request<ApiDocumentHistory>(`/documents/${encodeURIComponent(documentId)}/history?${new URLSearchParams({ page: String(page), pageSize: "20" })}`, { signal });
+}
 export function uploadDocumentVersion(documentId: string, file: File) {
   const body = new FormData();
   body.set("file", file);
   return request<ApiDocument>(`/documents/${encodeURIComponent(documentId)}/versions`, { method: "POST", body });
+}
+export function getDocumentBarcode(documentId: string) { return request<ApiBarcodeOverview>(`/documents/${encodeURIComponent(documentId)}/barcode`); }
+export function listBarcodes(signal?: AbortSignal) { return request<ApiBarcodeManagerRow[]>("/barcodes", { signal }); }
+export function generateDocumentBarcode(documentId: string, expectedRevision: number) { return request<ApiBarcode>(`/documents/${encodeURIComponent(documentId)}/barcode`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expectedRevision }) }); }
+export function printGeneratedBarcode(documentId: string, expectedRevision: number) { return request<ApiBarcodePrintReceipt>(`/documents/${encodeURIComponent(documentId)}/barcode/print`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expectedRevision }) }); }
+export function reprintDocumentBarcode(documentId: string, expectedRevision: number, copies = 3) { return request<ApiBarcodePrintReceipt>(`/documents/${encodeURIComponent(documentId)}/barcode/reprint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ copies, expectedRevision }) }); }
+
+export async function printDocument(documentId: string): Promise<Blob> {
+  const session = readStoredSession();
+  if (!session) throw new DocumentsRequestError("Your session has expired. Sign in again.", 401);
+  const response = await fetch(`${apiBaseUrl}/documents/${encodeURIComponent(documentId)}/print`, { method: "POST", headers: { Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" }, body: "{}", cache: "no-store" });
+  if (response.status === 401) { clearSession(); throw new DocumentsRequestError("Your session has expired. Sign in again.", 401); }
+  if (!response.ok) { const payload = await response.json().catch(() => null); throw new DocumentsRequestError(payload?.error?.message ?? "Document printing is unavailable.", response.status); }
+  return response.blob();
 }
 
 export async function fetchDocumentPreview(documentId: string): Promise<Blob> {
