@@ -9,6 +9,8 @@ import type { ApiDocument } from "@/services/documents";
 import type { WorkflowRoute, WorkflowRouteDirection } from "../workflow.types";
 import { WorkflowHistoryPanel } from "./workflow-history-panel";
 import { TaskSlaLabel } from "./task-sla-label";
+import { Button } from "@/components/ui/button";
+import { SetbackView } from "./setback-view";
 
 interface RoutesViewProps {
   routes: WorkflowRoute[];
@@ -25,6 +27,7 @@ function formatWhen(value: string | null): string {
 
 export function RoutesView({ routes, onOpenDocument, onSignOut }: RoutesViewProps) {
   const [direction, setDirection] = useState<WorkflowRouteDirection>("INBOUND");
+  const [showSetback, setShowSetback] = useState(false);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const visibleRoutes = routes.filter((route) => route.direction === direction);
   const selectedRoute = routes.find((route) => route.id === selectedRouteId) ?? null;
@@ -39,6 +42,8 @@ export function RoutesView({ routes, onOpenDocument, onSignOut }: RoutesViewProp
         <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 shadow-sm"><span className="size-2 rounded-full bg-amber-500" />{inboundCount} {inboundCount === 1 ? "route needs" : "routes need"} attention</div>
       </section>
 
+      <div className="flex gap-2"><Button variant={showSetback ? "secondary" : "default"} aria-pressed={!showSetback} onClick={() => setShowSetback(false)}>All routes</Button><Button variant={showSetback ? "default" : "secondary"} aria-pressed={showSetback} onClick={() => setShowSetback(true)}>Setback</Button></div>
+      {showSetback ? <SetbackView onSignOut={onSignOut} /> : <>
       <section className="grid gap-3 sm:grid-cols-3" aria-label="Route summary">
         <article className="rounded-2xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Inbound</p><p className="mt-2 text-2xl font-bold text-slate-900">{inboundCount}</p><p className="mt-1 text-xs text-violet-700">Awaiting your action</p></article>
         <article className="rounded-2xl border border-slate-200 bg-white p-4"><p className="text-xs text-slate-500">Outbound</p><p className="mt-2 text-2xl font-bold text-slate-900">{outboundCount}</p><p className="mt-1 text-xs text-slate-400">Workflows you started</p></article>
@@ -67,6 +72,7 @@ export function RoutesView({ routes, onOpenDocument, onSignOut }: RoutesViewProp
         </div>
       </section>
       {selectedRoute ? <WorkflowHistoryPanel key={selectedRoute.id} onOpenDocument={() => onOpenDocument(selectedRoute.document)} onSignOut={onSignOut} route={selectedRoute} /> : null}
+      </>}
     </div>
   );
 }

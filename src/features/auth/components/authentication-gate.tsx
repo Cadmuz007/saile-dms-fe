@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { WorkspaceShell } from "@/features/workspace/components/workspace-shell";
 
 import { getCurrentUser, signIn } from "@/services/auth";
+import { logoutSession, renewSession } from "@/services/session";
+import { SessionLifecycle } from "./session-lifecycle";
 
 import { hasAdminConsoleAccess } from "../authorization";
 import { LoginScreen } from "./login-screen";
@@ -17,6 +19,7 @@ export function AuthenticationGate() {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [isRedirectingToAdmin, setIsRedirectingToAdmin] = useState(false);
+  useEffect(() => { const cleared = () => { setCurrentUser(null); setIsRedirectingToAdmin(false); }; window.addEventListener("saile-session-cleared", cleared); return () => window.removeEventListener("saile-session-cleared", cleared); }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,8 +33,9 @@ export function AuthenticationGate() {
       }
 
       try {
-        const user = await getCurrentUser(session.accessToken);
-        if (!cancelled && hasAdminConsoleAccess(user)) {
+        const renewed = await renewSession();
+        const user = await getCurrentUser(renewed.accessToken);
+        if (!cancelled && hasAdminConsoleAccess(user) && !new URLSearchParams(window.location.search).has("document")) {
           setIsRedirectingToAdmin(true);
           router.replace("/admin");
           return;
@@ -51,8 +55,8 @@ export function AuthenticationGate() {
   async function handleSignIn(credentials: SignInCredentials, rememberDevice: boolean): Promise<void> {
     const session = await signIn(credentials);
     const user = await getCurrentUser(session.accessToken);
-    saveSession(session.accessToken, rememberDevice);
-    if (hasAdminConsoleAccess(user)) {
+    saveSession(session.accessToken, rememberDevice, { refreshToken: session.refreshToken, idleExpiresAt: session.idleExpiresAt, sessionExpiresAt: session.sessionExpiresAt });
+    if (hasAdminConsoleAccess(user) && !new URLSearchParams(window.location.search).has("document")) {
       setIsRedirectingToAdmin(true);
       router.replace("/admin");
       return;
@@ -61,7 +65,7 @@ export function AuthenticationGate() {
   }
 
   function handleSignOut(): void {
-    clearSession();
+    logoutSession();
     setCurrentUser(null);
   }
 
@@ -70,6 +74,6 @@ export function AuthenticationGate() {
   }
 
   return currentUser !== null
-    ? <WorkspaceShell currentUser={currentUser} onSignOut={handleSignOut} />
+    ? <><SessionLifecycle /><WorkspaceShell currentUser={currentUser} onSignOut={handleSignOut} /></>
     : <LoginScreen onSignIn={handleSignIn} />;
 }

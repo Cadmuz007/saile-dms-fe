@@ -3,6 +3,8 @@ import { clearSession, readStoredSession } from "@/features/auth/session-storage
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 export type ApiLibraryArea = "HOME" | "PRIVATE" | "PUBLIC";
+export interface StorageUsage { usedBytes: string; limitBytes: string; blockOverQuota: boolean; uploadsBlocked: boolean; }
+export function getStorageUsage(signal?: AbortSignal) { return request<StorageUsage>("/storage/usage", { signal }); }
 export interface ApiFolder {
   id: string; name: string; area: ApiLibraryArea; parentId: string | null; ownerUserId: string; archivedAt: string | null; archivedByFolderId: string | null; createdAt: string; updatedAt: string;
   canMove?: boolean; canArchive?: boolean; canRestore?: boolean; _count: { documents: number };
@@ -92,6 +94,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export function listFolders(area: ApiLibraryArea, signal?: AbortSignal, tree = false) { return request<ApiFolder[]>(`/folders?${new URLSearchParams({ area, ...(tree ? { tree: "true" } : {}) })}`, { signal }); }
 export function listDocuments(area: ApiLibraryArea, signal?: AbortSignal, all = false) { return request<ApiDocument[]>(`/documents?${new URLSearchParams({ area, ...(all ? { all: "true" } : {}) })}`, { signal }); }
+export function getDocument(id: string, signal?: AbortSignal) { return request<ApiDocument>(`/documents/${encodeURIComponent(id)}`, { signal }); }
 export function createFolder(input: { name: string; area: ApiLibraryArea; parentId?: string }) { return request<ApiFolder>("/folders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }); }
 export function moveFolder(folderId: string, parentId: string | null) { return request<ApiFolder>(`/folders/${encodeURIComponent(folderId)}/move`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId }) }); }
 export function moveDocument(documentId: string, folderId: string | null) { return request<ApiDocument>(`/documents/${encodeURIComponent(documentId)}/move`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folderId }) }); }

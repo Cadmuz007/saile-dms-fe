@@ -55,7 +55,7 @@ export function SlaPage({ currentUser, onSignOut }: { currentUser: Authenticated
       {!settings && !error ? <Typography>Loading SLA settings…</Typography> : null}
       {settings && draft ? <Box component="form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <Stack spacing={3}>
-          <Alert severity="info">Settings apply when workflow tasks activate. Existing deadlines keep their original policy; pre-rollout tasks remain untracked. Setback and notification delivery are not active yet.</Alert>
+          <Alert severity="info">Settings apply when workflow tasks activate. Existing deadlines keep their original policy; pre-rollout tasks remain untracked. Setback shows overdue tasks and reminder schedules. The first reminder is due after the deadline, then repeats at the selected business-hour interval. In-app delivery applies to new task activations; email and SMS are not configured yet.</Alert>
           <Paper sx={{ p: 2.5 }} elevation={0}><Stack spacing={2}>
             <Typography variant="h6">Response limits</Typography>
             <Typography variant="body2" color="text.secondary">An explicit For Review response starts the review allowance. Opening a document does not count as a response.</Typography>

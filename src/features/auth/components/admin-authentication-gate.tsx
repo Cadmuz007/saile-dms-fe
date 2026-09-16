@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 import { AdminShell } from "@/features/admin/components/admin-shell";
 import { getCurrentUser } from "@/services/auth";
+import { logoutSession, renewSession } from "@/services/session";
+import { SessionLifecycle } from "./session-lifecycle";
 
 import { hasAdminConsoleAccess } from "../authorization";
 import { clearSession, readStoredSession } from "../session-storage";
@@ -13,6 +15,7 @@ import type { AuthenticatedUser } from "../types";
 export function AdminAuthenticationGate() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
+  useEffect(() => { const cleared = () => { setCurrentUser(null); router.replace("/"); }; window.addEventListener("saile-session-cleared", cleared); return () => window.removeEventListener("saile-session-cleared", cleared); }, [router]);
 
   useEffect(() => {
     const session = readStoredSession();
@@ -21,7 +24,7 @@ export function AdminAuthenticationGate() {
       return;
     }
 
-    getCurrentUser(session.accessToken)
+    renewSession().then((renewed) => getCurrentUser(renewed.accessToken))
       .then((user) => {
         if (hasAdminConsoleAccess(user)) {
           setCurrentUser(user);
@@ -40,9 +43,9 @@ export function AdminAuthenticationGate() {
   }
 
   function signOut(): void {
-    clearSession();
+    logoutSession();
     router.replace("/");
   }
 
-  return <AdminShell currentUser={currentUser} onSignOut={signOut} />;
+  return <><SessionLifecycle /><AdminShell currentUser={currentUser} onSignOut={signOut} /></>;
 }

@@ -7,7 +7,7 @@ export class WorkflowInstancesRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, includeMeta = false): Promise<T> {
   const session = readStoredSession();
   if (!session) throw new WorkflowInstancesRequestError("Your session has expired. Sign in again.", 401);
   const headers = new Headers(options.headers);
@@ -21,7 +21,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.success) throw new WorkflowInstancesRequestError(payload?.error?.message ?? "Set Sail is temporarily unavailable. Please try again.", response.status);
-  return payload.data as T;
+  return (includeMeta ? { items: payload.data, meta: payload.meta } : payload.data) as T;
 }
 
 export function getWorkflowOptions(documentId: string, signal?: AbortSignal) {
@@ -34,6 +34,19 @@ export function startWorkflow(documentId: string, input: { templateId: string; s
 
 export function listWorkflowRoutes(direction: WorkflowRouteDirection, signal?: AbortSignal) {
   return request<WorkflowRoute[]>(`/workflows?${new URLSearchParams({ direction })}`, { signal });
+}
+
+export interface SetbackItem {
+  id: string;
+  assignedUser: { id: string; firstName: string; lastName: string; email: string };
+  sla: { phase: "RESPONSE" | "REVIEW"; dueAt: string; tracked: boolean; overdue: boolean };
+  stage: { id: string; name: string; attempt: number };
+  reminder: { status: "DUE" | "SCHEDULED"; intervalHours: number; firstDueAt: string; latestDueAt: string | null; nextDueAt: string; dueOccurrenceCount: number; deliveryEnabled: boolean } | null;
+  workflow: { id: string; subject: string; templateRevision: number; template: { id: string; name: string }; document: { id: string; title: string } };
+}
+export interface SetbackPage { items: SetbackItem[]; meta: { page: number; pageSize: number; total: number; totalPages: number; evaluatedAt: string } }
+export function listSetback(direction: WorkflowRouteDirection, page: number, signal?: AbortSignal) {
+  return request<SetbackPage>(`/workflows/setback?${new URLSearchParams({ direction, page: String(page) })}`, { signal }, true);
 }
 
 export function getWorkflowInstance(instanceId: string, signal?: AbortSignal) {

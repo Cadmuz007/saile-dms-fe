@@ -13,8 +13,8 @@ import { TaskSlaLabel } from "./task-sla-label";
 import type { WorkflowInstanceDetail, WorkflowRoute } from "../workflow.types";
 
 interface WorkflowHistoryPanelProps {
-  route: WorkflowRoute;
-  onOpenDocument: () => void;
+  route: Pick<WorkflowRoute, "id" | "subject" | "template" | "templateRevision">;
+  onOpenDocument?: () => void;
   onSignOut: () => void;
 }
 
@@ -130,7 +130,7 @@ export function WorkflowHistoryPanel({ route, onOpenDocument, onSignOut }: Workf
     <section aria-labelledby="workflow-history-heading" className="grid gap-5 rounded-2xl border border-violet-200 bg-white p-5 shadow-[0_18px_36px_-28px_rgba(15,23,42,0.55)] sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700"><History aria-hidden="true" size={19} /></span><div><p className="text-xs font-bold tracking-[0.12em] text-violet-700 uppercase">Immutable route history</p><h2 className="mt-1 text-xl font-bold text-slate-950" id="workflow-history-heading">{route.subject}</h2><p className="mt-1 text-sm text-slate-500">{route.template.name}, revision {route.templateRevision}</p></div></div>
-        <Button onClick={onOpenDocument} variant="secondary"><FileText aria-hidden="true" size={16} />Open document</Button>
+        {onOpenDocument ? <Button onClick={onOpenDocument} variant="secondary"><FileText aria-hidden="true" size={16} />Open document</Button> : null}
       </div>
 
       {!detail && !error && !notice ? <p aria-live="polite" className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Loading workflow history…</p> : null}

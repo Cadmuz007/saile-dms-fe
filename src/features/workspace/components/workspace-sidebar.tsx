@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { LibrarySection, MockDocument, WorkspaceView } from "../types";
 
 interface WorkspaceSidebarProps {
+  uploadsBlocked?: boolean;
   activeView: WorkspaceView;
   documents: MockDocument[];
   onCreateRecord: () => void;
@@ -21,17 +22,17 @@ const sections: Array<{ name: LibrarySection; icon: typeof LockKeyhole; descript
   { name: "Public", icon: UsersRound, description: "Shared organization records" },
 ];
 
-export function WorkspaceSidebar({ activeView, documents, onCreateRecord, onCreateSection, onNavigate, onOpenDocument }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ activeView, documents, uploadsBlocked, onCreateRecord, onCreateSection, onNavigate, onOpenDocument }: WorkspaceSidebarProps) {
   const isSectionView = activeView === "sections";
 
   return (
-    <aside className="flex w-full flex-col border-b border-slate-200/90 bg-white lg:min-h-screen lg:w-[17.5rem] lg:shrink-0 lg:border-r lg:border-b-0">
+    <aside className="flex w-full flex-col border-b border-slate-200/90 bg-white lg:min-h-screen lg:w-56 lg:shrink-0 lg:border-r lg:border-b-0">
       <div className="flex items-center px-5 pt-5 pb-4">
         <Image alt="Saile" className="h-auto w-[6.8rem]" height={44} src="/saile.png" width={110} />
       </div>
 
       <div className="grid gap-2 px-4">
-        <Button className="h-10 justify-start gap-2 rounded-xl shadow-sm" onClick={onCreateRecord} variant="default">
+        <Button disabled={uploadsBlocked} title={uploadsBlocked ? "Storage limit reached. Retained and archived versions still count." : undefined} className="h-10 justify-start gap-2 rounded-xl shadow-sm" onClick={onCreateRecord} variant="default">
           <FilePlus2 aria-hidden="true" size={16} />
           Create record
         </Button>

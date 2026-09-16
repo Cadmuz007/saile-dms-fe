@@ -1,4 +1,6 @@
-import { Archive, Barcode, Bell, ChevronDown, FolderOpen, HardDrive, Home, LogOut, Route, Search, Trash2 } from "lucide-react";
+import { Archive, Barcode, ChevronDown, FolderOpen, HardDrive, Home, LogOut, Route, Search, Trash2 } from "lucide-react";
+import { NotificationInbox } from "@/features/notifications/notification-inbox";
+import { StorageUsageIndicator } from "./storage-usage";
 
 import type { AuthenticatedUser } from "@/features/auth/types";
 import { cn } from "@/lib/utils";
@@ -61,21 +63,10 @@ export function WorkspaceTopNav({ activeView, currentUser, onNavigate, onShowSea
         >
           <Search aria-hidden="true" size={18} />
         </button>
-        <button
-          aria-label="Notifications"
-          className="relative grid size-9 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700"
-          title="Notifications"
-          type="button"
-        >
-          <Bell aria-hidden="true" size={18} />
-          <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-violet-600 ring-2 ring-white" />
-        </button>
+        <NotificationInbox onSignOut={onSignOut} onOpenRoutes={() => onNavigate("routes")} />
         <div className="hidden items-center gap-2 border-l border-slate-200 pl-3 sm:flex">
           <HardDrive aria-hidden="true" className="text-violet-700" size={17} />
-          <div className="leading-tight">
-            <p className="text-[11px] font-semibold text-slate-700">455 MB <span className="font-normal text-slate-400">of 5 GB</span></p>
-            <div className="mt-1 h-1 w-20 overflow-hidden rounded-full bg-slate-100"><div className="h-full w-[9%] rounded-full bg-violet-600" /></div>
-          </div>
+          <StorageUsageIndicator />
         </div>
         <div className="flex items-center gap-1.5 rounded-xl px-1.5 py-1">
           <span aria-hidden="true" className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-violet-700 to-fuchsia-600 text-[11px] font-bold text-white shadow-sm">{initials}</span>

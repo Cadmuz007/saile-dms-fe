@@ -31,6 +31,8 @@ import { WorkspaceTopNav } from "./workspace-top-nav";
 import { BarcodeDialog } from "./barcode-dialog";
 import { BarcodeManagerView } from "./barcode-manager-view";
 import { printBlob } from "../printing";
+import { getDocument, DocumentsRequestError } from "@/services/documents";
+import { getStorageUsage } from "@/services/documents";
 
 interface WorkspaceShellProps { currentUser: AuthenticatedUser; onSignOut: () => void; }
 
@@ -86,6 +88,48 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
   const [archivedFolders, setArchivedFolders] = useState<Folder[]>([]);
   const [barcodeTarget, setBarcodeTarget] = useState<Pick<MockDocument, "id" | "title"> | null>(null);
   const [barcodeRevision, setBarcodeRevision] = useState(0);
+  const [linkRevision, setLinkRevision] = useState(0);
+  const [linkStatus, setLinkStatus] = useState<string | null>(null);
+  const [uploadsBlocked, setUploadsBlocked] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    const refresh = () => { void getStorageUsage(controller.signal).then((usage) => { if (!controller.signal.aborted) setUploadsBlocked(usage.uploadsBlocked); }).catch(() => undefined); };
+    refresh(); const timer = window.setInterval(refresh, 60_000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [realtimeRevision]);
+
+  useEffect(() => {
+    const changed = () => { setSelectedDocument(null); setLinkStatus(null); setLinkRevision((value) => value + 1); };
+    window.addEventListener("popstate", changed);
+    return () => window.removeEventListener("popstate", changed);
+  }, []);
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("document");
+    if (!id) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setSelectedDocument(null);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) { setLinkStatus("This document link is invalid."); return; }
+      setLinkStatus("Opening document link…");
+      void getDocument(id, controller.signal).then((document) => {
+        if (controller.signal.aborted) return;
+        setSelectedDocument(mapDocument(document, new Map())); setLinkStatus(null);
+      }).catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setSelectedDocument(null); setLinkStatus("This document is unavailable or you no longer have access.");
+        if (error instanceof DocumentsRequestError && error.status === 401) onSignOut();
+      });
+    }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [linkRevision, realtimeRevision, onSignOut]);
+
+  function closeDocumentLink() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("document");
+    window.history.replaceState(null, "", url);
+    setLinkStatus(null); setSelectedDocument(null); setLinkRevision((value) => value + 1);
+  }
 
   const refreshSequence = useRef(0);
   const refreshWorkspace = useCallback(async (signal?: AbortSignal): Promise<void> => {
@@ -105,7 +149,7 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
     const mappedDocuments = [...homeDocuments, ...privateDocuments, ...publicDocuments].map((document) => mapDocument(document, folderNames));
     setFolders(mappedFolders);
     setDocuments(mappedDocuments);
-    setSelectedDocument((current) => current ? mappedDocuments.find((document) => document.id === current.id) ?? null : null);
+    if (!new URLSearchParams(window.location.search).has("document")) setSelectedDocument((current) => current ? mappedDocuments.find((document) => document.id === current.id) ?? null : null);
     setDocumentTypes(availableTypes);
     setRoutes([...inboundRoutes, ...outboundRoutes]);
     const archivedNames = new Map([...apiFolders, ...archives.folders].map((folder) => [folder.id, folder.name]));
@@ -121,6 +165,7 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
 
   useEffect(() => subscribeToWorkspaceChanges(() => { setRealtimeRevision((current) => current + 1); void refreshWorkspace().catch(() => undefined); }, () => {
     ++refreshSequence.current;
+    setLinkRevision((value) => value + 1);
     setSelectedDocument(null); setDocuments([]); setRoutes([]); setArchivedDocuments([]); setDocumentTypes([]);
     setAccessResource(null); setMoveTarget(null); setLifecycleTarget(null); setSetSailTarget(null); setBarcodeTarget(null);
     setBarcodeRevision((value) => value + 1);
@@ -136,10 +181,12 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
     return () => { controller.abort(); window.clearInterval(timer); };
   }, [activeView, refreshWorkspace]);
 
-  function navigate(view: WorkspaceView): void { setActiveView(view); setSelectedDocument(null); }
-  function openDocument(document: MockDocument): void { setSelectedDocument(document); }
+  function navigate(view: WorkspaceView): void { closeDocumentLink(); setActiveView(view); }
+  function openDocument(document: MockDocument): void { closeDocumentLink(); setSelectedDocument(document); }
 
   async function createDocument(input: { title: string; section: LibrarySection; classification: MockDocument["classification"]; documentTypeId?: string; metadata: Array<{ fieldId: string; value: string }>; file: File }): Promise<void> {
+    const usage = await getStorageUsage();
+    if (usage.blockOverQuota && BigInt(usage.usedBytes) + BigInt(input.file.size) > BigInt(usage.limitBytes)) throw new Error("Your storage limit would be exceeded. Retained and archived versions still count.");
     await uploadDocument({ title: input.title, area: areaBySection[input.section], folderId: input.section === activeSection ? currentFolderId ?? undefined : undefined, classification: input.classification === "Classified" ? "CLASSIFIED" : "UNCLASSIFIED", documentTypeId: input.documentTypeId, metadata: input.metadata, file: input.file });
     await refreshWorkspace(); setActiveView("sections"); setNotice(`“${input.title}” was securely uploaded.`);
   }
@@ -185,7 +232,8 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
   const canShareFolder = (folder: Folder) => Boolean(folder.isLive && folder.section === "Private" && folder.ownerUserId === currentUser.id && currentUser.permissions.includes("folders.share"));
 
   function renderWorkspace() {
-    if (selectedDocument) return <DocumentDetails canManageAccess={canShareDocument(selectedDocument)} document={selectedDocument} onAction={showDemoAction} onBack={() => setSelectedDocument(null)} onManageAccess={() => setAccessResource({ id: selectedDocument.id, kind: "documents", name: selectedDocument.title })} onVersionChanged={() => refreshWorkspace()} realtimeRevision={realtimeRevision} />;
+    if (linkStatus) return <section className="grid gap-3 p-6"><p role="status">{linkStatus}</p><button className="text-left underline" onClick={closeDocumentLink}>Back to workspace</button></section>;
+    if (selectedDocument) return <DocumentDetails canManageAccess={canShareDocument(selectedDocument)} document={selectedDocument} onAction={showDemoAction} onBack={closeDocumentLink} onManageAccess={() => setAccessResource({ id: selectedDocument.id, kind: "documents", name: selectedDocument.title })} onVersionChanged={() => refreshWorkspace()} realtimeRevision={realtimeRevision} />;
     switch (activeView) {
       case "home": return <HomeView documents={documents.filter((document) => !document.folderId)} folders={folders.filter((folder) => !folder.parentId)} routeDocuments={routes.map((route) => mapDocument(route.document, new Map(route.document.folder ? [[route.document.folder.id, route.document.folder.name]] : [])))} routes={routes} onCreateRecord={() => setIsRecordDialogOpen(true)} onOpenDocument={openDocument} onShowRoutes={() => navigate("routes")} />;
       case "sections": return <SectionsView activeSection={activeSection} canManageFolderAccess={canShareFolder} currentFolderId={currentFolderId} documents={documents} folders={folders} onArchiveDocument={(document) => setLifecycleTarget({ id: document.id, kind: "document", name: document.title, action: "archive" })} onArchiveFolder={(folder) => setLifecycleTarget({ id: folder.id, kind: "folder", name: folder.name, action: "archive" })} onLocationChange={selectLocation} onManageFolderAccess={(folder) => setAccessResource({ id: folder.id, kind: "folders", name: folder.name })} onMoveDocument={(document) => setMoveTarget({ id: document.id, kind: "document", name: document.title, section: document.section, currentFolderId: document.folderId ?? null })} onMoveFolder={(folder) => setMoveTarget({ id: folder.id, kind: "folder", name: folder.name, section: folder.section, currentFolderId: folder.parentId ?? null })} onOpenDocument={openDocument} />;
@@ -198,9 +246,16 @@ export function WorkspaceShell({ currentUser, onSignOut }: WorkspaceShellProps) 
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/70 text-slate-950 lg:flex-row" data-workspace>
-      <WorkspaceSidebar activeView={activeView} documents={documents} onCreateRecord={() => setIsRecordDialogOpen(true)} onCreateSection={() => setIsSectionDialogOpen(true)} onNavigate={navigate} onOpenDocument={openDocument} />
-      <div className="flex min-w-0 flex-1 flex-col"><WorkspaceTopNav activeView={activeView} currentUser={currentUser} onNavigate={navigate} onShowSearch={() => setSelectedDocument(null)} onSignOut={onSignOut} /><main className="min-w-0 flex-1 overflow-x-hidden">{renderWorkspace()}</main></div>
-      <section className="min-h-96 w-full border-t border-slate-200/90 bg-slate-50/60 lg:w-[26rem] lg:shrink-0 lg:border-t-0 lg:border-l xl:w-[29rem]">{selectedDocument ? <DocumentPreview canPrintDocument={currentUser.permissions.includes("documents.print")} canUseBarcode={["barcodes.generate", "barcodes.print", "barcodes.reprint"].some((permission) => currentUser.permissions.includes(permission))} document={selectedDocument} onAction={(action) => void handleDocumentAction(action, selectedDocument)} onSetSail={selectedDocument.canStartWorkflow ? () => setSetSailTarget(selectedDocument) : undefined} /> : <SearchPanel documents={documents} onOpenDocument={openDocument} />}</section>
+      <WorkspaceSidebar uploadsBlocked={uploadsBlocked} activeView={activeView} documents={documents} onCreateRecord={() => setIsRecordDialogOpen(true)} onCreateSection={() => setIsSectionDialogOpen(true)} onNavigate={navigate} onOpenDocument={openDocument} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <WorkspaceTopNav activeView={activeView} currentUser={currentUser} onNavigate={navigate} onShowSearch={closeDocumentLink} onSignOut={onSignOut} />
+        <div className="flex min-w-0 flex-1 flex-col xl:flex-row">
+          <main className="min-w-0 flex-1 overflow-x-hidden">{renderWorkspace()}</main>
+          <section aria-label={selectedDocument ? "Document preview panel" : "Search panel"} className={`min-h-96 w-full border-t border-slate-200/90 bg-slate-50/60 xl:shrink-0 xl:border-t-0 xl:border-l ${selectedDocument ? "order-first xl:order-last xl:w-[55vw] xl:self-start xl:sticky xl:top-0" : "xl:w-[26rem] 2xl:w-[29rem]"}`}>
+            {selectedDocument ? <DocumentPreview canPrintDocument={currentUser.permissions.includes("documents.print")} canUseBarcode={["barcodes.generate", "barcodes.print", "barcodes.reprint"].some((permission) => currentUser.permissions.includes(permission))} document={selectedDocument} onAction={(action) => void handleDocumentAction(action, selectedDocument)} onSetSail={selectedDocument.canStartWorkflow ? () => setSetSailTarget(selectedDocument) : undefined} /> : <SearchPanel documents={documents} onOpenDocument={openDocument} />}
+          </section>
+        </div>
+      </div>
       <CreateRecordDialog documentTypes={documentTypes} onCreate={createDocument} onOpenChange={setIsRecordDialogOpen} open={isRecordDialogOpen} />
       <CreateSectionDialog defaultSection={activeSection} onCreate={createSection} onOpenChange={setIsSectionDialogOpen} open={isSectionDialogOpen} parentName={currentFolderId ? folders.find((folder) => folder.id === currentFolderId)?.name : undefined} />
       <AccessGrantsDialog key={accessResource ? `access:${accessResource.kind}:${accessResource.id}` : "access-closed"} onChanged={() => refreshWorkspace()} onClose={() => setAccessResource(null)} resource={accessResource} />

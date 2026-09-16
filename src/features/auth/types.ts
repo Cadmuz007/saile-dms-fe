@@ -15,6 +15,9 @@ export interface SignInCredentials {
 
 export interface SignInSession {
   accessToken: string;
+  refreshToken: string;
+  idleExpiresAt: string;
+  sessionExpiresAt: string;
   tokenType: "Bearer";
   expiresIn: string;
   user: Omit<AuthenticatedUser, "permissions">;

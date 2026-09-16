@@ -2,6 +2,9 @@ const sessionStorageKey = "saile-dms.auth.session";
 
 export interface StoredSession {
   accessToken: string;
+  refreshToken?: string;
+  idleExpiresAt?: string;
+  sessionExpiresAt?: string;
 }
 
 function getStorage(rememberDevice: boolean): Storage {
@@ -26,14 +29,25 @@ export function readStoredSession(): StoredSession | null {
   return null;
 }
 
-export function saveSession(accessToken: string, rememberDevice: boolean): void {
+export function saveSession(accessToken: string, rememberDevice: boolean, details: Omit<StoredSession, "accessToken"> = {}): void {
   window.sessionStorage.removeItem(sessionStorageKey);
   window.localStorage.removeItem(sessionStorageKey);
-  getStorage(rememberDevice).setItem(sessionStorageKey, JSON.stringify({ accessToken } satisfies StoredSession));
+  getStorage(rememberDevice).setItem(sessionStorageKey, JSON.stringify({ accessToken, ...details } satisfies StoredSession));
+}
+
+export function updateSession(expectedRefreshToken: string, details: Partial<StoredSession>): boolean {
+  const current = readStoredSession();
+  if (current?.refreshToken !== expectedRefreshToken) return false;
+  const storage = window.sessionStorage.getItem(sessionStorageKey) ? window.sessionStorage : window.localStorage;
+  storage.setItem(sessionStorageKey, JSON.stringify({ ...current, ...details }));
+  window.dispatchEvent(new Event("saile-session-renewed"));
+  return true;
 }
 
 export function clearSession(): void {
   if (typeof window === "undefined") return;
+  const existed = Boolean(readStoredSession());
   window.sessionStorage.removeItem(sessionStorageKey);
   window.localStorage.removeItem(sessionStorageKey);
+  if (existed) window.dispatchEvent(new Event("saile-session-cleared"));
 }

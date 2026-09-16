@@ -13,6 +13,7 @@ import { DocumentTypeIcon } from "./document-type-icon";
 import { DocumentVersionHistory } from "./document-version-history";
 import { DocumentAttachments } from "./document-attachments";
 import { DocumentHistoryDialog } from "./document-history-dialog";
+import { DocumentLink } from "./document-link";
 
 interface DocumentDetailsProps {
   document: MockDocument;
@@ -48,7 +49,7 @@ export function DocumentDetails({ document, onAction, onBack, canManageAccess, o
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-[110rem] gap-7 p-5 sm:p-7 lg:p-8">
+    <div className="@container mx-auto grid w-full max-w-[110rem] gap-5 p-4 sm:p-5">
       <button className="inline-flex h-9 w-fit items-center gap-2 rounded-lg px-2 text-sm font-semibold text-slate-500 transition hover:bg-white hover:text-violet-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-700" onClick={onBack} type="button"><ArrowLeft aria-hidden="true" size={17} />Back to workspace</button>
 
       <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.55)] sm:p-6">
@@ -61,10 +62,23 @@ export function DocumentDetails({ document, onAction, onBack, canManageAccess, o
 
       <section className="grid gap-4" aria-labelledby="record-description-heading">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-slate-950" id="record-description-heading">Record description</h2><p className="mt-1 text-xs text-slate-500">Reference details for this document</p></div><div className="flex flex-wrap gap-2">{document.isLive ? <Button onClick={() => setHistoryOpen(true)} size="lg" title="Open immutable document history" variant="secondary"><FileClock aria-hidden="true" size={16} />Document History</Button> : null}{canManageAccess ? <Button onClick={onManageAccess} size="lg" title="Manage private access" variant="secondary"><UsersRound aria-hidden="true" size={16} />Manage access</Button> : null}{document.isLive ? <Button onClick={() => void download()} size="lg" title="Download current version" variant="secondary"><Download aria-hidden="true" size={16} />Download</Button> : null}<Button onClick={() => onAction("Update record")} size="lg" title="Update record" variant="secondary">Update record</Button></div></div>
-        <Card className="grid gap-0 overflow-hidden p-0 shadow-[0_12px_26px_-22px_rgba(15,23,42,0.5)] sm:grid-cols-2">
-          {metadata(document).map(([label, value]) => <dl className="border-b border-slate-100 p-4 last:border-b-0 sm:nth-[3]:border-b-0 sm:odd:border-r" key={label}><dt className="text-xs text-slate-400">{label}</dt><dd className="mt-1 text-sm font-semibold text-slate-800">{value}</dd></dl>)}
+        <Card className="grid gap-0 overflow-hidden p-0 shadow-[0_12px_26px_-22px_rgba(15,23,42,0.5)] @min-[24rem]:grid-cols-2">
+          {metadata(document).map(([label, value]) => <dl className="min-w-0 border-b border-slate-100 p-4 last:border-b-0 @min-[24rem]:odd:border-r" key={label}><dt className="text-xs text-slate-400">{label}</dt><dd className="mt-1 text-sm font-semibold break-words text-slate-800">{value}</dd></dl>)}
         </Card>
       </section>
+
+      {document.isLive ? <section aria-label="Sharing and access" className="rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-600">
+        <h2 className="font-semibold text-slate-950">Sharing and access</h2>
+        <div className="mt-2"><DocumentLink key={document.id} documentId={document.id} /></div>
+        <p className="mt-2">{document.section === "Home"
+          ? "Home is your personal library. Ordinary sharing and moves to Private/Public are not available. A pending workflow assignment can allow read and decision access, but does not grant EDIT access."
+          : document.section === "Public"
+            ? "Public documents are readable by licensed users in this organization, subject to Document Type visibility. Public visibility does not grant edit access. Set Sail routing is unavailable here."
+            : canManageAccess
+              ? "Use Manage access to grant Read or Edit to active users or groups. Folder grants can also provide inherited access."
+              : "Only the owner with the documents.share permission can manage this Private document’s direct grants. Ask the owner to use Manage access; an administrator can grant the share permission if it is missing."}</p>
+        <p className="mt-2 text-xs">Document Type visibility still applies. Uploading a version or completing a PDF transform requires both documents.version permission and ownership or EDIT access.</p>
+      </section> : null}
 
       {document.isLive ? <DocumentVersionHistory documentId={document.id} onChanged={onVersionChanged} onNotice={onAction} /> : null}
 

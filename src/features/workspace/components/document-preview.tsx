@@ -45,14 +45,14 @@ export function DocumentPreview({ document, onAction, onSetSail, canPrintDocumen
   }, [canPreview, document.id, document.isLive]);
 
   return (
-    <aside aria-label="Document preview and approval" className="grid h-full content-start gap-5 overflow-y-auto bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.09),transparent_14rem)] p-5">
+    <aside aria-label="Document preview and approval" className="flex h-[calc(100dvh-6rem)] min-h-[32rem] flex-col gap-3 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.09),transparent_14rem)] p-3 sm:p-4">
       <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="text-xs font-semibold text-slate-500">Status</span>{document.status ? <Badge tone={statusTone[document.status]}>{document.status}</Badge> : <Badge>Not routed</Badge>}</div><div className="flex items-center gap-1 text-xs text-slate-500"><Eye aria-hidden="true" size={15} />{document.viewedBy.length} viewed</div></div>
 
-      <section className="rounded-[1.25rem] border border-slate-300 bg-slate-300 p-3 shadow-[0_20px_35px_-28px_rgba(15,23,42,0.65)]">
+      <section className="min-h-0 flex-1 overflow-hidden rounded-md border border-slate-300 bg-slate-200 p-1 shadow-sm">
         {previewUrl ? (
-          document.mimeType?.startsWith("image/") ? <div className="relative min-h-[27rem] w-full bg-white"><Image alt={`Preview of ${document.title}`} fill className="object-contain" src={previewUrl} unoptimized /></div> : <iframe className="h-[34rem] w-full bg-white" src={previewUrl} title={`Preview of ${document.title}`} />
+          document.mimeType?.startsWith("image/") ? <div className="relative h-full w-full bg-white"><Image alt={`Preview of ${document.title}`} fill className="object-contain" src={previewUrl} unoptimized /></div> : <iframe className="h-full w-full bg-white" src={previewUrl} title={`Preview of ${document.title}`} />
         ) : document.isLive ? (
-          <div className="grid min-h-[27rem] place-items-center bg-white p-8 text-center text-sm text-slate-600">
+          <div className="grid h-full place-items-center bg-white p-8 text-center text-sm text-slate-600">
             {previewError ?? (canPreview ? "Loading secure preview…" : "This Office or text document is download-only in the initial release.")}
           </div>
         ) : <article className="grid min-h-[27rem] content-start gap-6 bg-white p-5 shadow-sm sm:p-6">
